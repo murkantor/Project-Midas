@@ -189,6 +189,17 @@ void init_watch_at_start_of_stage(void);
 Gfx *draw_watch_current_page(Gfx *gdl, Mtx *arg1, s32 watch_transitioning);
 void sub_GAME_7F0A69A8(void);
 
+
+void sub_GAME_7F0A6A80(void);
+s32 portWatchModalBack(void);
+void set_cur_player_look_vertical_inverted(u32 param_1);
+void cur_player_set_aim_control(u32 param_1);
+void cur_player_set_sight_onscreen_control(u32 param_1);
+void cur_player_set_lookahead(u32 param_1);
+void cur_player_set_ammo_onscreen_setting(u32 param_1);
+void cur_player_set_screen_setting(u32 param_1);
+int sub_GAME_7F0AC0E8(u8 *arg);
+
 #endif
 
 

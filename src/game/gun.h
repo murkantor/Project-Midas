@@ -300,19 +300,24 @@ extern WeaponStats sniperrifle_stats;
 extern WeaponStats camera_stats;
 
 typedef struct WatchContButtonPositions {
-    f32 words[19];
-    struct coord3d start;
-    struct coord3d joystick;
-    struct coord3d dPad;
-    struct coord3d cUp;
-    struct coord3d cDown;
-    struct coord3d cLeft;
-    struct coord3d cRight;
-    struct coord3d a;
-    struct coord3d b;
-    struct coord3d l;
-    struct coord3d r;
-    struct coord3d z;
+    union {
+        f32 words[55];
+        struct {
+            f32 reserved[19];
+            struct coord3d start;
+            struct coord3d joystick;
+            struct coord3d dPad;
+            struct coord3d cUp;
+            struct coord3d cDown;
+            struct coord3d cLeft;
+            struct coord3d cRight;
+            struct coord3d a;
+            struct coord3d b;
+            struct coord3d l;
+            struct coord3d r;
+            struct coord3d z;
+        };
+    };
 } WatchContButtonPositions;
 
 f32 bondwalkItemGetForceOfImpact(ITEM_IDS item);
@@ -329,7 +334,7 @@ u16 *get_ptr_short_watch_text_for_item(ITEM_IDS item);
 
 s32 bondwalkItemHasAmmo(ITEM_IDS item);
 
-void gunDrawSight(s32 *gdl);
+void gunDrawSight(Gfx **gdl);
 
 WeaponStats *get_ptr_item_statistics(ITEM_IDS item);
 
@@ -408,5 +413,52 @@ Gfx *generate_ammo_total_microcode(Gfx *gdl);
 s32 portGadgetHudNameShown(void); /* gadget name drawn in the left-hand ammo slot (joy_port whitelist) */
 s32 portMissionTimerShown(void); /* solo mission timer under that slot - lifts the bottom-left message too */
 #endif
+
+u8 * getPlayerWeaponBufferForHand(GUNHAND hand);
+
+ModelFileHeader *get_ptr_itemheader_in_hand(GUNHAND hand);
+
+u16 *get_ptr_first_title_line_item(ITEM_IDS item);
+
+u16 *get_ptr_long_watch_text_for_item(ITEM_IDS item);
+
+u16 *get_ptr_second_title_line_item(ITEM_IDS item);
+
+Gfx *gunDrawWatchAmmoDisplay(Gfx *gdl);
+
+Gfx *sub_GAME_7F061E18(Gfx *gdl, BeamRecord *flash, s32 arg2);
+
+
+u32 getSizeBufferWeaponInHand(s32 hand);
+int getCurrentWeaponOrItem(void);
+void sub_GAME_7F05C614(void);
+s32 get_itemtype_in_hand(GUNHAND hand);
+void sub_GAME_7F05E978(Model* model, s32 val);
+void sub_GAME_7F05E6B4(enum GUNHAND hand, s32 arg1);
+void sub_GAME_7F05E83C(GUNHAND hand);
+void gunUpdateAttachedRocket(s32 handIndex);
+void gunSpawnGLGrenade(s32 handnum);
+void generate_player_thrown_grenade(s32 hand);
+void generate_player_thrown_knife(s32 hand);
+void generate_player_thrown_object(s32 hand);
+void currentPlayerCreateRocket(GUNHAND hand);
+void sub_GAME_7F05D690(void);
+void used_to_load_1st_person_model_on_demand(GUNHAND hand);
+f32 get_horizontal_offset_on_solo_watch_menu_for_item(ITEM_IDS item);
+f32 get_vertical_offset_on_solo_watch_menu_for_item(ITEM_IDS item);
+f32 get_depth_offset_solo_watch_menu_inventory_page_for_item(ITEM_IDS item);
+f32 get_vertical_position_solo_watch_menu_main_page_for_item(ITEM_IDS item);
+f32 get_lateral_position_solo_watch_menu_main_page_for_item(ITEM_IDS item);
+f32 get_depth_on_solo_watch_menu_page_for_item(ITEM_IDS item);
+f32 get_xrotation_solo_watch_menu_for_item(ITEM_IDS item);
+f32 get_yrotation_solo_watch_menu_for_item(ITEM_IDS item);
+void increment_num_deaths(void);
+void increment_num_suicides_display_MP(void);
+void increment_num_times_killed_MwtGC(void);
+s32 get_ammo_type_for_weapon(ITEM_IDS weapon);
+void bullet_path_from_screen_center(coord3d* arg0, coord3d* result, enum GUNHAND arg2);
+s32 get_curplay_killcount(void);
+s32 check_cur_player_ammo_amount_in_inventory(AMMOTYPE ammotype);
+s32 get_keyanalyzer_flag(void);
 
 #endif

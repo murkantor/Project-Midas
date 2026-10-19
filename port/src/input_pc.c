@@ -28,6 +28,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <ultra64.h>
+#include "port_input.h"
 
 #include <SDL.h>
 #include "port_console.h" /* the tilde console: fixed keys feed it below */

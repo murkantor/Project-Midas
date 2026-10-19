@@ -1,4 +1,8 @@
 #include <ultra64.h>
+#include "boss.h"
+#include "pi.h"
+#include "token.h"
+#include "vi.h"
 #include <PR/R4300.h>
 #include <PR/os.h>
 #include <PR/os_internal.h>
@@ -126,7 +130,7 @@ void init(void)
     decompress_result = jump_decompressfile(datazipram, csegmentSegmentVaddrStart, RZIPBUFADDR);
     if (decompress_result);
 
-    inflate_code_size = (s32) ((u32) &_inflateSegmentRomStart - (u32) &_codeSegmentRomStart);
+    inflate_code_size = (s32) ((uintptr_t) &_inflateSegmentRomStart - (uintptr_t) &_codeSegmentRomStart);
     if (inflate_code_size > MAXCODESIZE)
     {
         osPiRawStartDma(OS_READ, &_alt_startSegmentRomStart, &_alt_startSegmentStart, inflate_code_size - MAXCODESIZE);
@@ -223,7 +227,7 @@ void idleCreateThread(void)
  */
 void rmonCreateThread(void)
 {
-    osCreateThread(&rmonThread, RMON_THREAD_ID, rmonMain, NULL, setSPToEnd(&sp_rmon, sizeof(sp_rmon)), RMON_THREAD_PRIORITY);
+    osCreateThread(&rmonThread, RMON_THREAD_ID, (void (*)(void *))rmonMain, NULL, setSPToEnd(&sp_rmon, sizeof(sp_rmon)), RMON_THREAD_PRIORITY);
     osStartThread(&rmonThread);
 }
 

@@ -4,6 +4,11 @@
 
 #include <bondtypes.h>
 
+struct StanPrefixRecord {
+    s32 stanfile;
+    StandTile *ptr_firstroom;
+};
+
 // RGB? I've called them 'triple' because I don't really know what RGB is
 // No parens around params
 #define STAN_TRIPLE_TO_PNT_INDEX(tile, tripleIndex) (tile->hdrTail >> (8 - 4*tripleIndex) & 0xF)
@@ -106,7 +111,7 @@ s32 getTileRoom(StandTile* tile);
 PropRecord *sub_GAME_7F0B1410(StandTile *arg0, f32 arg1, f32 arg2, f32 arg3, f32 arg4, s32 arg5);
 void copy_tile_RGB_as_24bit(StandTile *tile, f32 p_x, f32 p_z, u8 *rtn);
 s32 stanTileDistanceRelated(struct StandTile **arg0, f32 arg1, f32 arg2, f32 arg3, struct StandTileLocusCallbackRecord *arg4);
-s32 stanGetLocusField0(struct StandTileLocusCallbackRecord *arg0);
+s32 *stanGetLocusField0(struct StandTileLocusCallbackRecord *arg0);
 s32 stanGetLocusCount(struct StandTileLocusCallbackRecord *arg0);
 f32 distBetweenPoints2d(f32 o_x,f32 o_z,f32 p_x,f32 p_z);
 bool stanPointProjectsOntoEdge(f32 x1, f32 z1, f32 x2, f32 z2, f32 x3, f32 z3);
@@ -118,4 +123,9 @@ struct StandTilePoint *stanMatchTileName(char *id);
 s32 isPointInsideTriStandTileUnscaled_Maybe(struct StandTile *tile, f32 p_x, f32 p_z);
 s32 sub_GAME_7F0B21B0(StandTile **tileStack, f32 target_x, f32 target_z, f32 radius, s32 *rooms, s32 *count_rtn, s32 bufMax);
 StandTile *stanFindTileBelowPos(coord3d *pos, u8 *rooms, f32 *yRtn);
+
+void stanDetermineEOF(struct StanPrefixRecord *file /* canonically r */, s32 origBase, u8 *newBase);
+void stanLoadFile(struct StanPrefixRecord *file);
+bool stanTileHasZeroArea(StandTile *tile);
+
 #endif

@@ -43,4 +43,7 @@ Gfx * mp_watch_menu_display(Gfx *arg0);
 s32 disablePlayerActionsWhenPausedOrInMpMenu(void);
 s32 mpwatchShouldDisplayGauges(void);
 
+
+void mpwatchMenuTick(void);
+
 #endif

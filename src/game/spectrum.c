@@ -48,8 +48,12 @@ s32 sub_GAME_7F0D37DC(u32 cycles, u8 specA, u8 port, u8 value);
 
 // data
 s8 D_8004EC30 = 0x0;
+#ifdef __APPLE__
+#define spec_keyboard_row_caps_z_x_c_v spec_keyboard_buffer[0]
+#else
 extern u8 spec_keyboard_row_caps_z_x_c_v;
 #pragma weak spec_keyboard_row_caps_z_x_c_v = spec_keyboard_buffer
+#endif
 u8 spec_keyboard_buffer[] = 
 {
     0xFF, 0xFF, 0xFF, 0xFF,

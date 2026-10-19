@@ -1,10 +1,19 @@
+#ifndef TARGET_N64
+#include "port_options.h"
+#endif
 #include <os_extension.h>
+#include "game/debugmenu_handler.h"
+#include "game/options.h"
+#include "game/propobj.h"
+#include "game/ramromreplay.h"
+#include "game/viewport.h"
 #ifndef TARGET_N64
 #include <stdio.h> /* frontDrawCursor GE_DUMP_BOND probe */
 #endif
 #include <assets/oddtextures.h>
 #include "assets/image_externs.h"
 #include <ultra64.h>
+#include "gun.h"
 #include <bondgame.h>
 #include <bondconstants.h>
 #include <boss.h>
@@ -361,7 +370,7 @@ s32 is_cheat_menu_available = FALSE;
  * docs/port/port-options-menu.md */
 
 u8 * ptr_logo_and_walletbond_DL = NULL;
-s32 ptr_menu_videobuffer = 0;
+intptr_t ptr_menu_videobuffer = 0;
 struct Model *logoinst = NULL;
 struct Model * walletinst[] = { NULL, NULL, NULL, NULL};
 
@@ -1081,14 +1090,14 @@ Gfx *constructor_menu19_spectrum(Gfx *DL);
 void disable_all_switches(Model *arg0);
 void set_item_visibility_in_objinstance(Model* objinstance, s32 item, s32 mode);
 void set_cursor_to_stage_solo(LEVEL_SOLO_SEQUENCE level);
-Gfx *display_aligned_white_text_to_screen(Gfx *dl, s32 arg1, s32 arg2, s32 halign, s32 valign, u8 *arg5, s32 arg6, s32 arg7);
+Gfx *display_aligned_white_text_to_screen(Gfx *dl, s32 arg1, s32 arg2, s32 halign, s32 valign, u8 *arg5, struct fontchar *arg6, struct font *arg7);
 void setCursorPOSforMode(int mode);
 void set_cursor_pos_difficulty(int difficulty);
 
 // end forward declarations.
 
 
-Gfx *frontPrintText(Gfx *gdl, s32 *x, s32 *y, s8 *text, s32 second_font_table, s32 first_font_table, s32 arg6, s32 view_x, s32 view_y, s32 arg9, s32 arga)
+Gfx *frontPrintText(Gfx *gdl, s32 *x, s32 *y, s8 *text, struct fontchar *second_font_table, struct font *first_font_table, s32 arg6, s32 view_x, s32 view_y, s32 arg9, s32 arga)
 {
     if (j_text_trigger != 0)
     {
@@ -1264,7 +1273,7 @@ s32 frontCheckIfCheatIsUnlocked(s32 cheat)
 }
 
 
-int frontGetPlayersFavoriteWeaponInHand(int player,int hand) {
+u16 *frontGetPlayersFavoriteWeaponInHand(int player,int hand) {
     return get_ptr_long_watch_text_for_item(array_favweapon[player][hand]);
 }
 
@@ -1470,7 +1479,7 @@ Gfx *frontDrawCursor(Gfx *DL)
         {
             fprintf(stderr,
                     "cursor: opt=%d img=%08x idx=%08x w=%d h=%d fmt=%d copyidx=%08x\n",
-                    option, (u32) image, image->index, image->width,
+                    option, (uintptr_t) image, image->index, image->width,
                     image->height, image->format,
                     (mainfolderimages + IMG_COPY)->index);
             fflush(stderr);
@@ -1769,7 +1778,7 @@ void interface_menu00_legalscreen(void)
 /**
  * Render a string of standard text on the legal screen e.g. "TWYCROSS BOARD OF GAME CLASSIFICATION"
  */
-Gfx *display_aligned_white_text_to_screen(Gfx *dl, s32 arg1, s32 arg2, s32 halign, s32 valign, u8 *text, s32 arg6, s32 arg7)
+Gfx *display_aligned_white_text_to_screen(Gfx *dl, s32 arg1, s32 arg2, s32 halign, s32 valign, u8 *text, struct fontchar *arg6, struct font *arg7)
 {
     s32 sp4C;
     s32 sp48;
@@ -1865,7 +1874,7 @@ Gfx *constructor_menu00_legalscreen(Gfx *DL)
 
         sprintf(line, "Project Midas %s: Build %s\n", portPlatformName(), portBuildString());
         DL = display_aligned_white_text_to_screen(DL, 220, 16, CENTER_ALIGN, CENTER_ALIGN, (u8 *) line,
-                                                  (s32) ptrFontZurichBoldChars, (s32) ptrFontZurichBold);
+                                                  ptrFontZurichBoldChars, ptrFontZurichBold);
     }
 #endif
 
@@ -2571,7 +2580,7 @@ void frontCleanUpWalletBond(void)
 void init_menu05_fileselect(void)
 {
     s32 size = 0x6e000;
-    Gfx* DL = (s32)(ptr_logo_and_walletbond_DL) + (s32)(4096*10);
+    Gfx* DL = (Gfx *)(ptr_logo_and_walletbond_DL + 4096 * 10);
     int i;
 
     prev_keypresses = FALSE;
@@ -16224,7 +16233,7 @@ void set_briefing_page(WATCH_BRIEFING_PAGE page)
 // Address 0x7F015520 NTSC
 void load_briefing_text_for_stage(void)
 {
-    Gfx *temp_s0;
+    u8 *temp_s0;
     s32 argg;
 
 #ifndef TARGET_N64
@@ -16238,15 +16247,14 @@ void load_briefing_text_for_stage(void)
     }
 #endif
 
-    // what is this
-    temp_s0 = (s32)(ptr_logo_and_walletbond_DL) + (s32)(4096*10);
+    // The briefing and language bank share the remaining menu buffer.
+    temp_s0 = ptr_logo_and_walletbond_DL + 4096 * 10;
 
     // alright
     argg = 0x200;
     ptrbriefingdata = _fileNameLoadToAddr(mission_folder_setup_entries[briefingpage].briefing_name_ptr, FILELOADMETHOD_DEFAULT, (u8 *) temp_s0, argg);
 
-    // what is this
-    temp_s0 += argg / 8;
+    temp_s0 += argg;
 
     // what is this
     argg *= 879;
@@ -17515,7 +17523,7 @@ Gfx *constructor_menu16_nocontrollers(Gfx *DL)
     s32 x2;
     s32 x;
     s32 y;
-    s32 text;
+    u8 *text;
     s32 conConnected = joyGetConnectedControllers();
     s32 numContCon = 0;
 

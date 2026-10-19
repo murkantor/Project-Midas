@@ -1,8 +1,12 @@
 #include <ultra64.h>
+#include "ramrom.h"
 #include <memp.h>
 #include "initanitable.h"
 #include "objecthandler.h"
 #include "bondgame.h"
+#ifdef GE_NATIVE_64
+#include <string.h>
+#endif
 
 //bss
 
@@ -24,7 +28,7 @@ struct bondstruct_unk_animation_related D_80029D60 = {
     &animations_frame_buffer
 };
 
-s32 animation_table_ptrs1[] = {
+intptr_t animation_table_ptrs1[] = {
     PTR_ANIM_idle,
     PTR_ANIM_fire_standing,
     PTR_ANIM_fire_standing_fast,
@@ -230,8 +234,47 @@ struct anim_entry
     s32 unk10;
 };
 
+#ifdef GE_NATIVE_64
+ModelAnimation *portAnimationFromOffset(uintptr_t offset)
+{
+    static ModelAnimation *cache[0xE7E0 / 4];
+    u8 *base = ptr_animation_table->data;
+    if (offset >= 0xE7E0 || (offset & 3) != 0) return NULL;
+    if (cache[offset / 4] == NULL) {
+        const u8 *raw = ptr_animation_table->data + offset;
+        ModelAnimation *anim = mempAllocBytesInBank(sizeof(*anim), MEMPOOL_PERMANENT);
+        u32 address, descriptors, stream;
+        memset(anim, 0, sizeof(*anim));
+        memcpy(&address, raw, 4);
+        memcpy(&descriptors, raw + 8, 4);
+        memcpy(&stream, raw + 16, 4);
+        anim->address = (uintptr_t)_animation_entriesSegmentRomStart + address;
+        memcpy(&anim->unk04, raw + 4, 2);
+        anim->unk06 = raw[6];
+        anim->unk07 = raw[7];
+        anim->bitDescriptors = (ModelAnimBitField *)(base + descriptors);
+        memcpy(&anim->unk0C, raw + 12, 2);
+        memcpy(&anim->unk0E, raw + 14, 2);
+        anim->bitStream = (u8 *)base + stream;
+        cache[offset / 4] = anim;
+    }
+    return cache[offset / 4];
+}
+ModelAnimation *portAnimationResolve(ModelAnimation *anim)
+{
+    uintptr_t offset = (uintptr_t)anim - (uintptr_t)ptr_animation_table;
+    return offset < 0xE7E0 ? portAnimationFromOffset(offset) : anim;
+}
+#endif
+
 void expand_ani_table_entries(s32** arg0)
 {
+#ifdef GE_NATIVE_64
+    intptr_t *entry = (intptr_t *)arg0;
+    for (; *entry != 0; entry++) {
+        if (*entry != 1) *entry = (intptr_t)portAnimationFromOffset(*entry);
+    }
+#else
     s32** var_v0;
 
     var_v0 = arg0;
@@ -249,6 +292,7 @@ void expand_ani_table_entries(s32** arg0)
             **var_v0 += (s32)&_animation_entriesSegmentRomStart;
         }
     }
+#endif
 }
 
 void alloc_load_expand_ani_table(void)
@@ -258,7 +302,7 @@ void alloc_load_expand_ani_table(void)
     osCreateMesgQueue(&animMsgQ, animMesg, 8);
     initAnimationsBuffer(&D_80029D60, &animMsgQ, &dword_CODE_bss_80069458);
     
-    animsDataSegmentSize = (s32)&_animation_dataSegmentEnd - (s32)&_animation_dataSegmentStart;
+    animsDataSegmentSize = (u8 *)&_animation_dataSegmentEnd - (u8 *)&_animation_dataSegmentStart;
     
     ptr_animation_table = mempAllocBytesInBank(animsDataSegmentSize, MEMPOOL_PERMANENT);
 

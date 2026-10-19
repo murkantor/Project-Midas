@@ -79,4 +79,8 @@ void portHwNotePropdef(s32 type);
 
 void waitForNextFrame(void);
 
+
+void updateFrameCounters(s32 deltaFrames);
+void store_osgetcount(void);
+
 #endif

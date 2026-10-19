@@ -22,13 +22,22 @@ struct animation_table_data {
  * Data holder for animations.
  */
 extern struct animation_table_data* ptr_animation_table;
+/* Native animation headers live outside the serialized segment. Use this
+ * accessor for pointer comparisons as well as field access. */
+#ifdef GE_NATIVE_64
+struct ModelAnimation *portAnimationFromOffset(uintptr_t offset);
+struct ModelAnimation *portAnimationResolve(struct ModelAnimation *anim);
+#else
+#define portAnimationFromOffset(offset) ((struct ModelAnimation *)(ptr_animation_table->data + (offset)))
+#define portAnimationResolve(anim) (anim)
+#endif
 
 /**
  * Contains offsets into ptr_animation_table for player and guard animations.
  * The index of each value corresponds to `enum ANIMATION`.
  * The value corresponds to (e.g. index=0) PTR_ANIM_idle (same as ANIM_DATA_idle)
 */
-extern s32 animation_table_ptrs1[];
+extern intptr_t animation_table_ptrs1[];
 
 /**
  * Contains offsets into ptr_animation_table for object/vehicle animations.
@@ -36,5 +45,9 @@ extern s32 animation_table_ptrs1[];
  * The value corresponds to (e.g. index=0) PTR_ANIM_helicopter_cradle (same as ANIM_DATA_helicopter_cradle)
 */
 extern struct ModelAnimation * animation_table_ptrs2[];
+
+
+void alloc_load_expand_ani_table(void);
+void initAnimationsBuffer(struct bondstruct_unk_animation_related* animBuffer, OSMesgQueue* mq, s32 unused);
 
 #endif

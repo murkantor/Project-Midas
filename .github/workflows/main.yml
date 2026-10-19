@@ -19,6 +19,32 @@ env:
   BASEROM_US_SHA1: abe01e4aeb033b6c0836819f549c791b26cfde83
 
 jobs:
+  build-macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          fetch-depth: 0
+      - name: Install native build dependencies
+        run: brew install cmake ninja sdl2
+      - name: Build without ROM data
+        run: |
+          cmake -S . -B build_macos -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DGE_VIDEO=ON -DGE_NATIVE_64=ON -DGE_PORT_TESTS=ON
+          cmake --build build_macos --parallel 3
+          ctest --test-dir build_macos --output-on-failure
+      - name: Run native fixtures with sanitizers
+        run: |
+          cmake -S . -B build_native_tests -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DGE_NATIVE_64=ON -DGE_PORT_TESTS=ON -DGE_SANITIZE=ON
+          cmake --build build_native_tests --target native_layout_test native_collision_test native_aim_test native_stan_test native_movement_test native_prop_collision_test native_player_test --parallel 3
+          ctest --test-dir build_native_tests --output-on-failure
+
   build-linux:
     runs-on: ubuntu-24.04
 

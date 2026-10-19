@@ -6951,7 +6951,7 @@ static void gfx_dp_set_other_mode(uint32_t h, uint32_t l) {
 static inline void *seg_addr(uintptr_t w1) {
     // PD's tagged form: segmented addresses carry bit 0 (their asset
     // preprocessor stamps it).
-    if (w1 & 1) {
+    if (!PORT_IS_HOST_ADDR(w1) && (w1 & 1)) {
         // seg 0 is reserved and doesn't count here
         const uintptr_t seg = (w1 & 0x0f000000) >> 24;
         if (seg && segmentPointers[seg]) {
@@ -6988,7 +6988,7 @@ extern "C" {
 #define DL_JUMP_RING_LEN 512
 static struct DlJumpEntry {
     const Gfx* cmd;
-    uint32_t w0, w1;
+    uintptr_t w0, w1;
 } s_DlJumpRing[DL_JUMP_RING_LEN];
 static uint32_t s_DlJumpRingIdx;
 
@@ -7527,7 +7527,7 @@ static void gfx_run_dl(Gfx* cmd) {
                     fprintf(stderr, "gfx: last %u DL jumps (cmdaddr: w0 w1):\n", n);
                     for (i = s_DlJumpRingIdx - n; i != s_DlJumpRingIdx; i++) {
                         const struct DlJumpEntry* e = &s_DlJumpRing[i & (DL_JUMP_RING_LEN - 1)];
-                        fprintf(stderr, "  %p: %08x %08x\n", (const void *)e->cmd, e->w0, e->w1);
+                        fprintf(stderr, "  %p: %08zx %08zx\n", (const void *)e->cmd, (size_t)e->w0, (size_t)e->w1);
                     }
                     fflush(stderr);
                 }

@@ -4,7 +4,7 @@
 
 This is a video game about Jimothy's presumed-dead best friend Jarvis turns out to be alive, and in possession of a space laser he intends to point at a city - so Jimothy goes to the Cuban jungle and drops Jarvis off a satellite dish.
 
-Project Midas is a work-in-progress PC port of GE, built from the N64 decompilation. It runs on Windows and Linux and reads its game data from your own copy of the US cart.
+Project Midas is a work-in-progress PC port of GE, built from the N64 decompilation. It runs on Windows, Linux and macOS and reads its game data from your own copy of the US cart.
 
 ## AI Disclaimer
 
@@ -13,7 +13,7 @@ Claude was used in the making of this project. If you don't agree with this, ple
 ## Playing
 
 1. Put your GE (USA) cart image in the `Data` folder next to the executable. See `Data/README.txt` for the accepted formats and other ways to point the game at it.
-2. Run `ProjectMidas.exe` (Windows) or `ProjectMidas` (Linux).
+2. Run `ProjectMidas.exe` (Windows) or `ProjectMidas` (Linux/macOS).
 
 Files next to the executable:
 
@@ -37,7 +37,9 @@ An older `ge.ini` is renamed to `midas.ini` automatically on first run.
 
 ## Building
 
-The build runs in Docker, which has every tool and library both builds need. You also need the GE (USA) cart as `baserom.u.z64` in the repository root:
+For a native macOS build, see [the macOS instructions](docs/macos.md). Building on macOS does not require a ROM or extracted assets; playing requires your own US cart image.
+
+The Windows and Linux builds below run in Docker, which has their tools and libraries. You also need the GE (USA) cart as `baserom.u.z64` in the repository root:
 
 ```
 sha1: abe01e4aeb033b6c0836819f549c791b26cfde83

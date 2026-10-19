@@ -20,14 +20,8 @@
  *   3. portAudioInit(): SDL audio device setup, invoked lazily by the
  *      first pump after amCreateAudioManager has run alInit/alSynNew.
  *
- * Honest limits (bring-up quality, refine later):
- *   - A_RESAMPLE is linear interpolation (RSP uses a windowed table);
- *     slight high-frequency rolloff difference, inaudible for bring-up.
- *   - A_POLEF is a pass-through copy: the reverb wet path plays untinted
- *     (section filters off). Reverb timing/feedback still applies.
- *   - RAW16 wavetables would need a byteswap at A_LOADBUFF that is not
- *     detectable at that layer; both GE banks are 100% ADPCM (verified),
- *     so this never triggers. The bnkf dump would show type != 0.
+ * RAW16 wavetables are converted to native s16 when loading the bank;
+ * ADPCM wavetables remain byte streams. A_LOADBUFF copies both unchanged.
  *
  * State blobs (ADPCM/resampler/envmixer state RAM the driver hands us via
  * command words) are only ever read/written by THIS interpreter, so their
@@ -357,7 +351,7 @@ static s32 portAcmdValidate(Acmd *list, s32 count)
 
     for (c = 0; c < count; c++) {
         u32 w0 = list[c].words.w0;
-        u32 w1 = list[c].words.w1;
+        uintptr_t w1 = list[c].words.w1;
         u32 op = w0 >> 24;
         s32 bad = 0;
 
@@ -409,7 +403,7 @@ void portAcmdRun(Acmd *list, s32 count)
 
     for (c = 0; c < count; c++) {
         u32 w0 = list[c].words.w0;
-        u32 w1 = list[c].words.w1;
+        uintptr_t w1 = list[c].words.w1;
         u32 op = w0 >> 24;
 
         switch (op) {

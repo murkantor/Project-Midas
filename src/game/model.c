@@ -1,5 +1,10 @@
 #include <ultra64.h>
 #include <memp.h>
+#include <macro.h>
+#include <stddef.h>
+#include "initanitable.h"
+#include "othermodemicrocode.h"
+#include "ramrom.h"
 #include "model.h"
 #include "../rmon.h" /*<PR/rmon.h>*/
 #include "bondview.h"
@@ -24,6 +29,9 @@ typedef struct ModelGroupMtxBuildArg {
 } ModelGroupMtxBuildArg;
 
 // forward declarations
+#ifndef TARGET_N64
+extern int portPtrLooksBad(const void *);
+#endif
 void modelSetAnimFrame2WithChrStuff(struct Model *model, f32 framea, f32 frameb, f32 frame2a, f32 frame2b);
 
 
@@ -67,12 +75,12 @@ Model *modelmgrInstantiateModel(ModelFileHeader *header)
 
         if (model == NULL)
         {
-            model = mempAllocBytesInBank(0x20, MEMPOOL_STAGE);
+            model = mempAllocBytesInBank(offsetof(Model, anim), MEMPOOL_STAGE);
         }
 
         if (header->numRecords > 0)
         {
-            rwdata = mempAllocBytesInBank((((header->numRecords * 4) + 0xf) | 0xf) ^ 0xf, MEMPOOL_STAGE);
+            rwdata = mempAllocBytesInBank((((header->numRecords * sizeof(void *)) + 0xf) | 0xf) ^ 0xf, MEMPOOL_STAGE);
             rwdatalen = header->numRecords;
         }
     }
@@ -137,7 +145,7 @@ Model *modelmgrInstantiateModelWithAnim(ModelFileHeader *modelFileHeader)
 
         if (newModel == NULL)
         {
-            newModel = mempAllocBytesInBank(0xc0, MEMPOOL_STAGE);
+            newModel = mempAllocBytesInBank(ALIGN16_a(sizeof(Model)), MEMPOOL_STAGE);
         }
 
         requiredRwdatalen = modelFileHeader->numRecords;
@@ -149,7 +157,7 @@ Model *modelmgrInstantiateModelWithAnim(ModelFileHeader *modelFileHeader)
         if (requiredRwdatalen > 0)
         {
             i = requiredRwdatalen;
-            rwdatas = mempAllocBytesInBank((((i * 4) + 0xf) | 0xf) ^ 0xf, MEMPOOL_STAGE);
+            rwdatas = mempAllocBytesInBank((((i * sizeof(void *)) + 0xf) | 0xf) ^ 0xf, MEMPOOL_STAGE);
             rwdatalen = modelFileHeader->numRecords;
         }
     }
@@ -218,7 +226,7 @@ void sub_GAME_7F06C418(Vew4s32 *src, Vew4s32 *dst) {
 }
 
 
-void set_vtxallocator(s32 param_1) {
+void set_vtxallocator(Vertex *(*param_1)(s32)) {
   vtxallocator = param_1;
 }
 
@@ -910,6 +918,7 @@ void sub_GAME_7F06D160(coord3d *arg0, coord3d *arg1, f32 mult)
  */
 u16 modelAnimReadRootMotionValue(ModelAnimation *anim, s32 fieldIndex, s32 extraBitOffset)
 {
+    anim = portAnimationResolve(anim);
     u32 result;
     u32 new_var2;
     u32 oldResult;
@@ -977,6 +986,7 @@ u16 modelAnimReadRootMotionValue(ModelAnimation *anim, s32 fieldIndex, s32 extra
  */
 u16 sub_GAME_7F06D2E4(s32 jointnum, s32 flip, ModelSkeleton *skeleton, ModelAnimation *anim, s32 frame, coord16 *out)
 {
+    anim = portAnimationResolve(anim);
     u32 scaled;
     s32 base;
     u32 angle_raw;
@@ -1015,6 +1025,7 @@ u16 sub_GAME_7F06D2E4(s32 jointnum, s32 flip, ModelSkeleton *skeleton, ModelAnim
 
 f32 sub_GAME_7F06D3F4(s32 jointnum, s32 flip, ModelSkeleton *skeleton, ModelAnimation *anim, s32 frame, coord3d *pos)
 {
+    anim = portAnimationResolve(anim);
     s16 tmp[3];
     u16 angle;
 
@@ -1335,13 +1346,13 @@ void sub_GAME_7F06DB5C(ModelRenderData *arg0, Model *arg1, ModelNode *arg2, quat
     s32 sp4C;
     RenderPosView *sp48;
     s32 sp44;
-    s32 *new_var;
+    intptr_t *new_var;
     s32 sp40;
     quatf sp2C;
     Mtxf *sp28;
     f32 sp24;
     s32 _gap20;
-    s32 sp1C;
+    intptr_t sp1C;
 
     spA4 = arg2->Opcode;
     spA0 = (ModelRoData_GroupRecord *)arg2->Data;
@@ -1350,7 +1361,7 @@ void sub_GAME_7F06DB5C(ModelRenderData *arg0, Model *arg1, ModelNode *arg2, quat
     sp4C = spA0->MatrixID2;
     new_var = &sp1C;
     sp48 = arg1->render_pos;
-    sp1C = (s32)arg2->Parent;
+    sp1C = (intptr_t)arg2->Parent;
 
     if (*new_var != 0) {
         sp9C = arg0->basemtx;
@@ -1361,10 +1372,10 @@ void sub_GAME_7F06DB5C(ModelRenderData *arg0, Model *arg1, ModelNode *arg2, quat
 
     if (sp9C != 0) {
         quaternion_to_transform_matrix(&spA0->Origin, arg3, &sp58);
-        sp1C = (s32)&sp48[sp54];
+        sp1C = (intptr_t)&sp48[sp54];
         matrix_4x4_multiply_homogeneous(sp9C, &sp58, (Mtxf *)sp1C);
         if (g_ModelJointPositionedFunc != NULL) {
-            ((void (*)(s32, s32, s32)) g_ModelJointPositionedFunc)(sp54, sp1C, sp1C);
+            g_ModelJointPositionedFunc(sp54, (Mtxf *)sp1C);
         }
     } else {
         quaternion_to_transform_matrix(&spA0->Origin, arg3, (Mtxf *)&sp48[sp54]);
@@ -1458,6 +1469,7 @@ u32 modelAnimReadBitsAsU16Angle(u8 *bitstream, u8 width, u32 bitOffset)
  */
 void sub_GAME_7F06DEC0(s32 jointnum, s32 flip, ModelSkeleton *skeleton, ModelAnimation *anim, u8 *bitstream, coord3d *rot)
 {
+    anim = portAnimationResolve(anim);
     u32 bitoffset;
     u8 width;
     u16 rotation[3];
@@ -1702,6 +1714,7 @@ void sub_GAME_7F06E2B8(ModelRenderData *renderData, Model *model, ModelNode *nod
 // Decodes a packed joint angle from the animation bitstream using either mtxA or mtxB.
 f32 sub_GAME_7F06E540(s32 jointIndex, s32 useMtxB, ModelSkeleton *skeleton, ModelAnimation *anim, u8 *bitstream)
 {
+    anim = portAnimationResolve(anim);
     u32 bitOffset;
     u32 raw;
     u8 width;
@@ -2475,6 +2488,7 @@ f32 modelGetEffectiveAnimSpeed(Model *model) {
 
 s32 modelConstrainOrWrapAnimFrame(s32 frame, ModelAnimation *anim, f32 endframe)
 {
+    anim = portAnimationResolve(anim);
     if (frame < 0) {
         if (anim->unk07 & 1) {
             frame = anim->unk04 - ((-frame) % anim->unk04);
@@ -2547,6 +2561,7 @@ void modelCopyAnimForMerge(Model *model, f32 timemerge)
 
 void modelSetAnimation2(Model *model, ModelAnimation *anim, s32 flip, f32 frame, f32 speed, f32 arg5)
 {
+    anim = portAnimationResolve(anim);
     s32 hadNoAnim = !model->anim;
     s32 padding;
     s32 type;
@@ -2740,7 +2755,7 @@ void modelSetAnimEndFrame(Model *model, f32 endframe) {
 }
 
 void modelSetAnimFlipFunction(Model *model, void *callback) {
-    model->animflipfunc = callback;
+    model->animflipfunc = (intptr_t)callback;
 }
 
 
@@ -2806,7 +2821,7 @@ void modelSetAnimPlaySpeed(Model *model, f32 animation_rate, f32 startframe) {
 }
 
 
-void sub_GAME_7F06FF5C(Model *model, s32 arg1) {
+void sub_GAME_7F06FF5C(Model *model, intptr_t arg1) {
     model->unka0 = arg1;
 }
 
@@ -5356,7 +5371,7 @@ void subdraw(ModelRenderData *mrData, Model *mdl)
     }
     else
     {
-        osSyncPrintf("subdraw: object not initialised! (0x%X)\n", (u32)mdl->obj);
+        osSyncPrintf("subdraw: object not initialised! (0x%X)\n", (uintptr_t)mdl->obj);
         return_null();
     }
     #endif
@@ -5391,7 +5406,7 @@ void sub_GAME_7F074790(ModelRenderData* arg0, Model* arg1)
 {
     subcalcpos(arg1);
     subcalcmatrices(arg0, arg1);
-    subdraw((s32) arg0, arg1);
+    subdraw((intptr_t) arg0, arg1);
 }
 
 
@@ -5873,18 +5888,19 @@ u32 *sub_GAME_7F07549C(void *arg0, f32 *arg1, f32 *arg2, ModelNode **nodeptr)
  * Address 7F0754BC.
  * Copy animation from ROM to RAM
 */
-s32 loadAnimationFrame(ModelAnimation* anim, s32 frame, ModelSkeleton* unused)
+uintptr_t loadAnimationFrame(ModelAnimation* anim, s32 frame, ModelSkeleton* unused)
 {
-    s32 ret;
-    s32 source;
+    anim = portAnimationResolve(anim);
+    uintptr_t ret;
+    uintptr_t source;
     s32 frameSize;
-    u32 dest;
+    uintptr_t dest;
     u32 size;
 
     ret = 0;
     frameSize = anim->unk0E >> 3; // divide by 8
 
-    if (anim->address & 0x80000000) // If animation's address is in RAM
+    if (sizeof(void *) > 4 || (anim->address & 0x80000000)) // If animation's address is in RAM
     {
         // Load that frame from RAM
         ret = anim->address + (frame * frameSize);
@@ -5892,7 +5908,7 @@ s32 loadAnimationFrame(ModelAnimation* anim, s32 frame, ModelSkeleton* unused)
     else if (D_80036414 != NULL) // should never be NULL after initAnimationsBuffer is called
     {
         // Get dest from this D_80036414 which points to an array. Align to 16 bytes.
-        dest = ((u32) (D_80036414->animBufferPtr2 + 15) >> 4) * 16;
+        dest = ((uintptr_t) (D_80036414->animBufferPtr2 + 15) >> 4) * 16;
         ret = dest;
 
         // Get source of this animation in ROM with the offset of the frame we'll load
@@ -6028,7 +6044,7 @@ void modelPromoteNodeOffsetsToPointers(ModelNode *node, u32 vma, u32 fileramaddr
                              * texcoords, so on little-endian its halves are
                              * swapped; unswap it (low half 0x0500) or
                              * chrCreateBloodStain crashes. */
-                            u32 w = (u32) rodata->CollisionVertices[i].LinkedTo;
+                            u32 w = (uintptr_t) rodata->CollisionVertices[i].LinkedTo;
 
                             if (w != 0 && (w & 0x0000FFFFu) == 0x00000500u)
                             {
@@ -6339,7 +6355,7 @@ s32 modelCalculateRwDataIndexes(ModelNode *basenode)
                 {
                     ModelRoData_HeaderRecord *rodata = &node->Data->Header;
                     rodata->RwDataIndex = len;
-                    len += sizeof(struct ModelRwData_HeaderRecord) / 4;
+                    len += (sizeof(struct ModelRwData_HeaderRecord) + sizeof(void *) - 1) / sizeof(void *);
                     break;
                 }
             case MODELNODE_OPCODE_OP07:
@@ -6347,7 +6363,7 @@ s32 modelCalculateRwDataIndexes(ModelNode *basenode)
                 {
                     ModelRoData_Op07Record *rodata = &node->Data->Op07;
                     rodata->RwDataIndex = len;
-                    len += sizeof(struct ModelRwData_Op07Record) / 4;
+                    len += (sizeof(struct ModelRwData_Op07Record) + sizeof(void *) - 1) / sizeof(void *);
                     break;
                 }
             case MODELNODE_OPCODE_LOD:
@@ -6355,7 +6371,7 @@ s32 modelCalculateRwDataIndexes(ModelNode *basenode)
                 {
                     ModelRoData_LODRecord *rodata = &node->Data->LOD;
                     rodata->RwDataIndex = len;
-                    len += sizeof(struct ModelRwData_LODRecord) / 4;
+                    len += (sizeof(struct ModelRwData_LODRecord) + sizeof(void *) - 1) / sizeof(void *);
                     node->Child = rodata->Affects;
                     break;
                 }
@@ -6364,7 +6380,7 @@ s32 modelCalculateRwDataIndexes(ModelNode *basenode)
                 {
                     ModelRoData_SwitchRecord *rodata = &node->Data->Switch;
                     rodata->RwDataIndex = len;
-                    len += sizeof(struct ModelRwData_SwitchRecord) / 4;
+                    len += (sizeof(struct ModelRwData_SwitchRecord) + sizeof(void *) - 1) / sizeof(void *);
                     node->Child = rodata->Controls;
                     break;
                 }
@@ -6373,7 +6389,7 @@ s32 modelCalculateRwDataIndexes(ModelNode *basenode)
                 {
                     ModelRoData_HeadPlaceholderRecord *rodata = &node->Data->HeadPlaceholder;
                     rodata->RwDataIndex = len;
-                    len += sizeof(struct ModelRwData_HeadPlaceholderRecord) / 4;
+                    len += (sizeof(struct ModelRwData_HeadPlaceholderRecord) + sizeof(void *) - 1) / sizeof(void *);
                     node->Child = NULL;
                     break;
                 }
@@ -6382,7 +6398,7 @@ s32 modelCalculateRwDataIndexes(ModelNode *basenode)
                 {
                     ModelRoData_BSPRecord *rodata = &node->Data->BSP;
                     rodata->RwDataIndex = len;
-                    len += sizeof(struct ModelRwData_BSPRecord) / 4;
+                    len += (sizeof(struct ModelRwData_BSPRecord) + sizeof(void *) - 1) / sizeof(void *);
                     modelApplyReorderRelationsByArg(node, FALSE);
                     break;
                 }
@@ -6391,7 +6407,7 @@ s32 modelCalculateRwDataIndexes(ModelNode *basenode)
                 {
                     ModelRoData_Op11Record *rodata = &node->Data->Op11;
                     rodata->RwDataIndex = len;
-                    len += sizeof(struct ModelRwData_Op11Record) / 4;
+                    len += (sizeof(struct ModelRwData_Op11Record) + sizeof(void *) - 1) / sizeof(void *);
                     break;
                 }
             case MODELNODE_OPCODE_GUNFIRE:
@@ -6399,7 +6415,7 @@ s32 modelCalculateRwDataIndexes(ModelNode *basenode)
                 {
                     ModelRoData_GunfireRecord *rodata = &node->Data->Gunfire;
                     rodata->RwDataIndex = len;
-                    len += sizeof(struct ModelRwData_GunfireRecord) / 4;
+                    len += (sizeof(struct ModelRwData_GunfireRecord) + sizeof(void *) - 1) / sizeof(void *);
                     break;
                 }
             case MODELNODE_OPCODE_DLCOLLISION:
@@ -6407,7 +6423,7 @@ s32 modelCalculateRwDataIndexes(ModelNode *basenode)
                 {
                     ModelRoData_DisplayList_CollisionRecord *rodata = &node->Data->DisplayListCollisions;
                     rodata->RwDataIndex = len;
-                    len += sizeof(struct ModelRwData_DisplayList_CollisionRecord) / 4;
+                    len += (sizeof(struct ModelRwData_DisplayList_CollisionRecord) + sizeof(void *) - 1) / sizeof(void *);
                     break;
                 }
             default:

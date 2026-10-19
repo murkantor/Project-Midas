@@ -1,4 +1,6 @@
+#include <stdlib.h>
 #include <ultra64.h>
+#include "game/player.h"
 
 #include <bondtypes.h>
 #include <bondconstants.h>

@@ -1,12 +1,12 @@
 #include "str.h"
 
-char *strcpy(char *dst, const char *src) {
+char *(strcpy)(char *dst, const char *src) {
     unsigned char *ptr = dst;
     while(*ptr++ = *src++);
     return dst;
 }
 
-char *strncpy(char *dst, const char *src, size_t n) {
+char *(strncpy)(char *dst, const char *src, size_t n) {
     unsigned char *ptr = dst;
     while((*ptr++ = *src++)) { 
         if (--n == 0) {
@@ -19,7 +19,7 @@ char *strncpy(char *dst, const char *src, size_t n) {
     return dst;
 }
 
-char *strcat(char *dst, const char *src) {
+char *(strcat)(char *dst, const char *src) {
     unsigned char *ptr = dst;
     while (*ptr) { ptr++; };
     while(*ptr++ = *src++);

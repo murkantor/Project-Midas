@@ -67,7 +67,7 @@ extern f32 portFovDefault(void);
 typedef s32 bool; /* Boolean (TRUE/FALSE) */
 
 // forward declare for inherit structures
-typedef u32 romptr_t;
+typedef uintptr_t romptr_t;
 struct object_standard;
 struct ChrRecord;
 struct PropRecord;
@@ -595,7 +595,7 @@ typedef union
 
     typedef struct ModelAnimation
     {
-        s32 address;
+        uintptr_t address;
         u16 unk04; // number of frames in the animation
         u8 unk06;
         u8 unk07; // bit 0 is a loop flag: 0 means freeze anim at end, 1 means loop anim
@@ -707,10 +707,18 @@ typedef union
                 s16 t; /* 0xa */
             };
 
+#ifdef GE_NATIVE_64
+            u32 LinkedTo;
+#else
             struct Vertex *LinkedTo;
+#endif
 
             /* Collision vertices only: points to related model node. */
-            void *CollisionRelatedNode; /* 0x8 */
+#ifdef GE_NATIVE_64
+            u32 CollisionRelatedNode;
+#else
+            void *CollisionRelatedNode;
+#endif /* 0x8 */
         };
 
         union
@@ -789,7 +797,7 @@ typedef union
 
     typedef struct ModelFileTextures
     {
-        u32 TextureID;
+        uintptr_t TextureID;
         u8  Width;
         u8  Height;
         u8  MipMapTiles;
@@ -1110,7 +1118,7 @@ typedef union
             f32     Scale;       /*0x1c*/
             u16     RwDataIndex; /*0x20*/
             u16     reserved;    /*0x22 padding*/
-            u32     BaseAddr;    /*0x24 padding*/
+            void   *BaseAddr;    /*0x24 padding*/
         } ModelRoData_GunfireRecord;
 
         typedef struct ModelRwData_GunfireRecord
@@ -1323,6 +1331,7 @@ typedef union
     {
         struct ModelRoData_HeaderRecord Header;
         struct ModelRoData_GroupRecord Group;
+        struct ModelRoData_Op17Record Op17;
         struct ModelRoData_DisplayListRecord DisplayList;
         struct ModelRoData_Op05Record Op05;
         struct ModelRoData_Op06Record Op06;
@@ -1536,8 +1545,8 @@ typedef union
              * Offset 0x32.
             */
             s16               frameb;
-            s32               unk34;
-            s32               unk38;
+            intptr_t               unk34;
+            intptr_t               unk38;
             f32               endframe;
 
             f32               speed; /*0x40*/
@@ -1563,8 +1572,8 @@ typedef union
             */
             s16               frame2b;
 
-            s32               unk64;
-            s32               unk68;
+            intptr_t               unk64;
+            intptr_t               unk68;
             f32               unk6c;
             // 0x70
             f32               speed2;
@@ -1584,10 +1593,10 @@ typedef union
             // 0x90
             f32               animloopframe; /*0x90*/
             f32               animloopmerge; /*0x94*/
-            s32               animflipfunc; /*0x98*/
+            intptr_t               animflipfunc; /*0x98*/
             s32               unk9c;
             // 0xa0
-            s32               unka0; // This is likely a function pointer, see sub_GAME_7F06D490()
+            intptr_t               unka0; // This is likely a function pointer, see sub_GAME_7F06D490()
             f32               playspeed; // used by ACT_STAND in chrlv
             f32               animrate;
             f32               unkac;
@@ -2135,7 +2144,7 @@ typedef union
         // recalculated, the array replaced with a new one and index set to 0.
         /* player offset 0x58 */
         u8             curindex;
-        u8             unk59; // guess: room
+        u8             unk59; // requested movement speed (SPEED)
 
         // g_ClockTimer related
         u16            unk5a;
@@ -3233,9 +3242,11 @@ typedef union
         }
 
     //[This struct uses original names]
+    typedef uintptr_t MonitorCmdWord;
+
     typedef struct MonitorRecord
     {
-        u32 *cmdlist;   // 0x80	4	image pointer for this monitor
+        MonitorCmdWord *cmdlist;   // 0x80	4	image pointer for this monitor
         u16 offset;     // 0x84	2	[runtime] cur. #commands from start of routine
         s16 pause60;    // 0x86	2	[runtime] loop counter
         struct sImageTableEntry *tconfig;      //0x88	4	[runtime] monitor image# or p->image header
@@ -3929,7 +3940,7 @@ typedef struct CreditsEntry_s
 struct SetupIntroCredits
 {
     s32 type;
-    s32 unk04;
+    uintptr_t unk04;
 };
 #define CharArrayFrom32(input) ((input) & 0xFF000000) >> 24, ((input) & 0x00FF0000) >> 16, ((input) & 0x0000FF00) >> 8, (input) & 0x000000FF
 #define CharArrayFrom16(input) ((input) & 0xFF00) >> 8, (input) & 0x00FF
@@ -3977,7 +3988,7 @@ struct objective_entry
 #pragma region Images
 typedef struct sImageTableEntry
 {
-    u32 index;
+    uintptr_t index;
     u8  width;
     u8  height;
     u8  level;

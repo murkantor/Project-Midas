@@ -1,4 +1,7 @@
 #include <ultra64.h>
+#include "game/bondview.h"
+#include "game/lv.h"
+#include "game/player.h"
 #include "file.h"
 #include "file2.h"
 #include "front.h"

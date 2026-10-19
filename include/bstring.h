@@ -1,3 +1,7 @@
+#ifndef TARGET_N64
+#include <string.h>
+#include <strings.h>
+#else
 #ifndef __BSTRING_H__
 #define __BSTRING_H__
 #ifdef __cplusplus
@@ -33,3 +37,5 @@ extern void    bzero(void *, int);
 }
 #endif
 #endif /* !__BSTRING_H__ */
+
+#endif

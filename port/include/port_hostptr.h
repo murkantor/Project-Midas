@@ -26,7 +26,8 @@ int portXboxIsHostAddr(unsigned int v);
 #endif
 #define PORT_IS_HOST_ADDR(v) (portXboxIsHostAddr((unsigned int) (v)))
 #else
-#define PORT_IS_HOST_ADDR(v) ((unsigned int) (v) >= 0x10000000u)
+#include <stdint.h>
+#define PORT_IS_HOST_ADDR(v) ((uintptr_t) (v) >= 0x10000000u)
 #endif
 
 #endif

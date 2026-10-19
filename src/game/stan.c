@@ -1,4 +1,6 @@
 #include <ultra64.h>
+#include "game/dyn.h"
+#include "token.h"
 //#include <bondtypes.h>
 #include <deb.h>
 #include "stan.h"
@@ -37,12 +39,7 @@ extern s32 g_GlobalTimer;
 void getTileMidPoint(StandTile *tile, coord3d *out);
 
 // bss
-struct StanPrefixRecord {
-    //CODE.bss:8007B120
-    s32 stanfile;
-    //CODE.bss:8007B124
-    StandTile *ptr_firstroom;    // read as offset 4, hence the struct
-};
+
 
 struct StanPrefixRecord *stan_prefix;
 s32 dword_CODE_bss_8007B124;
@@ -109,7 +106,7 @@ u8 list_of_tilesizes[] = {
 //D:80040F58
 struct StandTile * standTileStart = NULL;
 //D:80040F5C
-s32 ptr_firstroom_0 = 0;
+intptr_t ptr_firstroom_0 = 0;
 //D:80040F60
 struct StandTile* stanTileEnd = NULL;
 //D:80040F64
@@ -163,14 +160,14 @@ const char aStanlinelog[] = "-stanlinelog";
 // forward declarations
 
 s32 stanIsSpecialBit1Set(StandTile *arg0, struct StandTileLocusCallbackRecord* arg1);
-s32 stanCheckLinkedSpecialTile(StandTile *tile, s32 pointIdx, s32 arg2, s32 arg3, s32 arg4, s32 *outFlags);
+s32 stanCheckLinkedSpecialTile(StandTile *tile, s32 pointIdx, f32 arg2, f32 arg3, f32 arg4, struct StandTileLocusCallbackRecord *record);
 s32 sub_GAME_7F0B21B0(StandTile **tileStack, f32 target_x, f32 target_z, f32 radius, s32 *rooms, s32 *count_rtn, s32 bufMax);
 f32 getShortest2dDispToInfTripleEdge(StandTile *tile, s32 start3index, f32 p_x, f32 p_z);
 StanCollisionResult sub_GAME_7F0B1DDC(struct StandTile**, f32, f32, f32, standTileLocusCallback_A_t, standTileLocusCallback_B_t, standTileLocusCallback_C_t, struct StandTileLocusCallbackRecord*);
 s32 stanLocusAddTileRoomIfNew(StandTile *tile, struct StandTileLocusCallbackRecord *rec);
-s32 stanGetLocusField0(struct StandTileLocusCallbackRecord *arg0);
+s32 *stanGetLocusField0(struct StandTileLocusCallbackRecord *arg0);
 s32 stanGetLocusCount(struct StandTileLocusCallbackRecord *arg0);
-bool stanLocusEdgeIsAboveY(StandTile *tile, s32 edgeIndex, f32 edgeDist, f32 distToPointA, f32 distToPointB, f32 *yThreshold);
+bool stanLocusEdgeIsAboveY(StandTile *tile, s32 edgeIndex, f32 edgeDist, f32 distToPointA, f32 distToPointB, struct StandTileLocusCallbackRecord *record);
 
 // end forward declarations
 
@@ -774,7 +771,11 @@ void stanLoadFile(struct StanPrefixRecord *file)
 
     m_stanRegion = 1;
     tokenIndexMask = !file->ptr_firstroom;
+#ifdef GE_NATIVE_64
+    stan_prefix = file;
+#else
     prefix->stanfile = file;
+#endif
     tokenIndexMask = 1;
 
     /*
@@ -2537,7 +2538,7 @@ StanCollisionResult sub_GAME_7F0B1DDC(StandTile **startTile, f32 x, f32 z, f32 r
                     {
                         if ((callbackB == NULL || !callbackB(tile, pointI, edgeDist, pointDistA, pointDistB, record)) && (tile->points[pointI].link >> 4))
                         {
-                            linkedTile = ((u32) standTileStart) + (tile->points[pointI].link << 3);
+                            linkedTile = ((uintptr_t) standTileStart) + (tile->points[pointI].link << 3);
                             for (i = cat - 1; i >= 0; i--)
                             {
                                 if (linkedTile == tileStack[i])
@@ -2706,7 +2707,7 @@ s32 stanIsSpecialBit1Set(StandTile *arg0, struct StandTileLocusCallbackRecord *a
     s32 val = STAN_MID_NIB(arg0->mid.half, 12);
     if (g_StanTileSpecialFlags[val] & STANTILEFLAG_FORCECROUCH)
     {
-        arg1->rooms = 1;
+        arg1->rooms = (s32 *)1;
     }
 
     return 0;
@@ -2716,7 +2717,7 @@ s32 stanIsSpecialBit1Set(StandTile *arg0, struct StandTileLocusCallbackRecord *a
 /**
  * Address: 7F0B2274
  */
-s32 stanCheckLinkedSpecialTile(StandTile *tile, s32 pointIdx, s32 arg2, s32 arg3, s32 arg4, s32 *outFlags)
+s32 stanCheckLinkedSpecialTile(StandTile *tile, s32 pointIdx, f32 arg2, f32 arg3, f32 arg4, struct StandTileLocusCallbackRecord *record)
 {
     u16 link;
     StandTile *target;
@@ -2730,7 +2731,7 @@ s32 stanCheckLinkedSpecialTile(StandTile *tile, s32 pointIdx, s32 arg2, s32 arg3
         mid = target->mid.half;
 
         if (g_StanTileSpecialFlags[STAN_MID_NIB(mid, 12)] & STANTILEFLAG_FORCECROUCH) {
-            outFlags[0] = 1;
+            record->rooms = (s32 *)1;
             return 1;
         }
 
@@ -2738,7 +2739,7 @@ s32 stanCheckLinkedSpecialTile(StandTile *tile, s32 pointIdx, s32 arg2, s32 arg3
 
         if (g_StanTileSpecialFlags[STAN_MID_NIB(mid, 12)] & STANTILEFLAG_LADDER) {
             dword_CODE_bss_8007BA0C = target;
-            outFlags[1] = 1;
+            record->count = 1;
             return 0;
         }
     }
@@ -2766,14 +2767,12 @@ s32 stanTileDistanceRelated(StandTile **arg0, f32 arg1, f32 arg2, f32 arg3, stru
         if (i>15) break;
     }
 #else
-    /* The original zeroed 64 bytes through this pointer, which only worked with
-     * IDO's stack layout and under GCC wiped the caller's locals (crashing
-     * Dam). Zero just one record; every caller and callback only uses fields
-     * inside it. */
-    ((s32 *) arg4)[0] = 0;
-    ((s32 *) arg4)[1] = 0;
-    ((s32 *) arg4)[2] = 0;
-    ((s32 *) arg4)[3] = 0;
+    /* The callbacks share the record's fields with room collection. Use the
+     * native field offsets: on 64-bit hosts rooms occupies two s32 words. */
+    arg4->rooms = NULL;
+    arg4->count = 0;
+    arg4->bufMax = 0;
+    arg4->nearEdgeCount = 0;
     (void) i;
 #endif
 
@@ -2792,7 +2791,7 @@ s32 stanTileDistanceRelated(StandTile **arg0, f32 arg1, f32 arg2, f32 arg3, stru
 }
 
 
-s32 stanGetLocusField0(struct StandTileLocusCallbackRecord *arg0)
+s32 *stanGetLocusField0(struct StandTileLocusCallbackRecord *arg0)
 {
     return arg0->rooms;
 }
@@ -2878,13 +2877,13 @@ void stanGetMoveBondCollisionTiles(StandTile **tile1, StandTile **tile2, coord3d
                             stanGetTileOrderedPointWorldPos(
                                 linktile,
                                 ((j >> 2) + k) % 3,
-                                (coord3d *)((s32)coords + (((j + k) & 3) * 0xc)));
+                                (coord3d *)((intptr_t)coords + (((j + k) & 3) * 0xc)));
                         }
 
                         stanGetTileOrderedPointWorldPos(
                             curtileStore,
                             curtilePointI,
-                            (coord3d *)((s32)coords + (((j + 3) & 3) * 0xc)));
+                            (coord3d *)((intptr_t)coords + (((j + 3) & 3) * 0xc)));
 
                         j++;
 
@@ -2933,8 +2932,9 @@ void stanGetMoveBondCollisionTiles(StandTile **tile1, StandTile **tile2, coord3d
  * 
  * For a given edge, return true if the edge is vertically above yThreshold.
  */
-bool stanLocusEdgeIsAboveY(StandTile *tile, s32 edgeIndex, f32 edgeDist, f32 distToPointA, f32 distToPointB, f32 *yThreshold)
+bool stanLocusEdgeIsAboveY(StandTile *tile, s32 edgeIndex, f32 edgeDist, f32 distToPointA, f32 distToPointB, struct StandTileLocusCallbackRecord *record)
 {
+    f32 *yThreshold = (f32 *)record;
     s32 nextIndex;
     s32 pointCount;
     f32 *threshold;
@@ -3527,12 +3527,12 @@ void sub_GAME_7F0B2F00(StandTilePoint** arg0) {
 
 void stanDetermineEOF(struct StanPrefixRecord *file /* canonically r */, s32 origBase, u8 *newBase)
 {
-    s32 delta;
+    intptr_t delta;
     void **roomPtr;
     StandTile *tile;
     u8 *tileSizes;
     
-    delta = ((s32) newBase) - origBase;
+    delta = ((intptr_t) newBase) - origBase;
 #ifndef TARGET_N64
     /* PC: compiled-in stan files already hold real pointers, so the
      * offset-to-pointer rebase must be zero or every room pointer is doubled. A
@@ -3558,8 +3558,8 @@ void stanDetermineEOF(struct StanPrefixRecord *file /* canonically r */, s32 ori
     assert(*r==0);
     #endif
   
-    standTileStart = (StandTile *)(((s32)file->ptr_firstroom + delta) - 0x80);
-    ptr_firstroom_0 = (s32)file->ptr_firstroom + delta;
+    standTileStart = (StandTile *)(((intptr_t)file->ptr_firstroom + delta) - 0x80);
+    ptr_firstroom_0 = (intptr_t)file->ptr_firstroom + delta;
     
     newBase = list_of_tilesizes;
     roomPtr = (void **)&file->ptr_firstroom;
@@ -3613,7 +3613,7 @@ void stanDetermineEOF(struct StanPrefixRecord *file /* canonically r */, s32 ori
             }
 #endif
 
-            tile = (StandTile *)((s32)tile
+            tile = (StandTile *)((intptr_t)tile
                 + (tileSizes = newBase)[STAN_PTCOUNT(tile->tail.half)]);
         }
         while (*(s32 *) tile != 0);
@@ -3673,7 +3673,7 @@ s32 sub_GAME_7F0B3044(void) {
     f32 temp_f0;
 
     sp1C = 0;
-    if (((dynGetFreeGfx() < 0x1000) || (dynGetFreeVtx() < 0x1000)) && (*D_800413D0 == 0)) {
+    if (((dynGetFreeGfx(dynGetMasterDisplayList()) < 0x1000) || (dynGetFreeVtx() < 0x1000)) && (*D_800413D0 == 0)) {
         D_800413C0 = 0.0f;
         D_800413C4 = 0.0f;
         D_800413C8 = D_800413CC;

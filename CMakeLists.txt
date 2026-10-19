@@ -1,19 +1,28 @@
 cmake_minimum_required(VERSION 3.16)
 project(ge007 C)
 
-# GoldenEye PC port build (docs/port/PORT-PLAN.md). Built 32-bit first, which
-# defuses the codebase's pointer<->s32 casts and keeps Gfx 8 bytes.
+# GoldenEye PC port build. macOS uses native 64-bit pointers; existing
+# Windows and Linux builds retain their 32-bit ABI by default.
 # The N64 ROM build stays on the classic Makefile; this file is PC-only.
 
 set(CMAKE_C_STANDARD 11)
 
+option(GE_NATIVE_64 "Build with native 64-bit pointers" ${APPLE})
+if(APPLE AND NOT GE_NATIVE_64)
+    message(FATAL_ERROR "macOS requires GE_NATIVE_64")
+endif()
+if(WIN32 AND GE_NATIVE_64)
+    message(FATAL_ERROR "The Windows port currently requires its 32-bit ABI")
+endif()
+if(GE_NATIVE_64)
+    add_compile_definitions(GE_NATIVE_64=1)
+    add_compile_options(-ffp-contract=off)
+else()
+    # SSE avoids x87 excess precision changing N64 single-precision comparisons.
+    add_compile_options(-m32 -msse2 -mfpmath=sse)
+endif()
+
 add_compile_options(
-    -m32
-    # Use SSE scalar floats so every operation rounds to single precision like
-    # the N64 FPU; x87's 80-bit excess precision flips borderline comparisons
-    # (it broke the stan.c tile-walk edge test and room visibility in Egypt).
-    -msse2
-    -mfpmath=sse
     -fno-strict-aliasing
     -fwrapv
     -funsigned-char
@@ -49,8 +58,13 @@ if(WIN32)
                      -Wl,--image-base=0x10000000 -Wl,--disable-dynamicbase
                      -Wl,--stack,16777216)
     link_libraries(dbghelp)
-else()
+elseif(NOT GE_NATIVE_64)
     add_link_options(-m32 -no-pie)
+endif()
+
+if(CMAKE_C_COMPILER_ID MATCHES "Clang")
+    # Decompiled C still contains implicit pointer/integer conversions.
+    add_compile_options($<$<COMPILE_LANGUAGE:C>:-Wno-error=int-conversion>)
 endif()
 
 add_compile_definitions(
@@ -224,6 +238,10 @@ function(port_asset_record obj sym)
 endfunction()
 
 function(port_add_asset_direct src sym)
+    if(GE_NATIVE_64)
+        set_property(GLOBAL APPEND PROPERTY PORT_ROM_ASSET_SYMS ${sym})
+        return()
+    endif()
     set(obj ${ASSET_OBJ_DIR}/${sym}.o)
     add_custom_command(OUTPUT ${obj}
         COMMAND ${CMAKE_C_COMPILER} ${ASSET_C_FLAGS} -c ${CMAKE_SOURCE_DIR}/${src} -o ${obj}.raw
@@ -240,6 +258,10 @@ endfunction()
 # Asset TU with no file symbol of its own (Model.c, bg .c): localize all
 # internals and plant the file symbol at .data offset 0 (the file start).
 function(port_add_asset_seg src sym)
+    if(GE_NATIVE_64)
+        set_property(GLOBAL APPEND PROPERTY PORT_ROM_ASSET_SYMS ${sym})
+        return()
+    endif()
     set(obj ${ASSET_OBJ_DIR}/${sym}.o)
     add_custom_command(OUTPUT ${obj}
         COMMAND ${CMAKE_C_COMPILER} ${ASSET_C_FLAGS} -c ${CMAKE_SOURCE_DIR}/${src} -o ${obj}.raw
@@ -265,7 +287,9 @@ else()
     set(ASSET_OBJS ${ASSET_OBJS_KEEP})
     message(STATUS "GE_ROMDATA_FALLBACK=OFF: dropping the served asset objects from the exe (ROM mandatory)")
 endif()
-set_source_files_properties(${ASSET_OBJS} PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+if(ASSET_OBJS)
+    set_source_files_properties(${ASSET_OBJS} PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+endif()
 
 # Loose single-TU asset data (unique symbol names; compiled like game code):
 set(ASSET_LOOSE_SRC
@@ -335,6 +359,7 @@ endif()
 # .incbin's the gunbarrel swirl RLE blob and the 14 attract-demo
 # recordings. Give the assembler the include paths and re-assemble when
 # the blobs change.
+if(GE_ROMDATA_FALLBACK)
 set_source_files_properties(port/src/segments.c PROPERTIES
     COMPILE_OPTIONS "-Wa,-I${CMAKE_SOURCE_DIR}/assets/images/combined;-Wa,-I${CMAKE_SOURCE_DIR}/assets/music"
     OBJECT_DEPENDS "${CMAKE_SOURCE_DIR}/assets/images/combined/combined.bin;${CMAKE_SOURCE_DIR}/assets/music/sfx.ctl;${CMAKE_SOURCE_DIR}/assets/music/sfx.tbl;${CMAKE_SOURCE_DIR}/assets/music/instruments.ctl;${CMAKE_SOURCE_DIR}/assets/music/instruments.tbl;${CMAKE_SOURCE_DIR}/assets/music/music.sbk")
@@ -348,6 +373,7 @@ list(TRANSFORM PORT_RAMROM_DEMO_BINS APPEND .bin)
 set_source_files_properties(port/src/ramrom_data.c PROPERTIES
     COMPILE_OPTIONS "-Wa,-I${CMAKE_SOURCE_DIR}/assets"
     OBJECT_DEPENDS "${CMAKE_SOURCE_DIR}/assets/ge007.u.2A4D50.usedby7F008DE4.bin;${PORT_RAMROM_DEMO_BINS}")
+endif()
 # osViModeTable[42]: compile the repo's REAL table (fr.c/sched.c read
 # comRegs.hStart/width/xScale + fldRegs[].vStart/yScale/origin from it)
 # instead of transcribing data into the shim.
@@ -370,6 +396,9 @@ endif()
 # By default the exe carries none of Rare's data and exits without the user's ROM.
 # -DGE_ROMDATA_FALLBACK=ON keeps compiled-in copies as a no-ROM fallback (see docs/port/romdata.md).
 option(GE_ROMDATA_FALLBACK "Keep compiled-in copies of the ROM-served asset classes (GE_ROMDATA=0 / missing-ROM fallback)" OFF)
+if(GE_ROMDATA_FALLBACK AND GE_NATIVE_64)
+    message(FATAL_ERROR "GE_NATIVE_64 requires runtime ROM loading (GE_ROMDATA_FALLBACK=OFF)")
+endif()
 if(GE_ROMDATA_FALLBACK)
     set_source_files_properties(port/src/segments.c port/src/ramrom_data.c port/src/romdata.c port/src/animdata.c
         PROPERTIES COMPILE_DEFINITIONS GE_ROMDATA_FALLBACK=1)
@@ -401,6 +430,14 @@ add_executable(ge ${GAME_SRC} ${ENGINE_SRC} ${GU_SRC} ${PORT_SRC}
 # The executable is named ProjectMidas, but the CMake target stays `ge` so build
 # scripts keep working, and ge_direct.log/Profiles keep their names.
 set_target_properties(ge PROPERTIES OUTPUT_NAME ProjectMidas)
+if(APPLE AND GE_NATIVE_64)
+    # Permit only the absent optional asset symbols; romdata supplies their data.
+    get_property(PORT_ROM_ASSET_SYMS GLOBAL PROPERTY PORT_ROM_ASSET_SYMS)
+    foreach(sym IN LISTS PORT_ROM_ASSET_SYMS)
+        target_link_options(ge PRIVATE "LINKER:-U,_${sym}")
+    endforeach()
+endif()
+
 # The exe's own icon (Explorer, a pinned taskbar entry): port/win/ProjectMidas.ico,
 # generated with the window icon by scripts/port/make_icon.py.
 if(WIN32)
@@ -443,6 +480,10 @@ if(GE_VIDEO)
         # the game needs SDL2.dll beside the exe
         add_custom_command(TARGET ge POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SDL2_ROOT}/bin/SDL2.dll $<TARGET_FILE_DIR:ge>)
+    elseif(APPLE OR GE_NATIVE_64)
+        find_package(SDL2 REQUIRED CONFIG)
+        find_package(OpenGL REQUIRED)
+        target_link_libraries(ge SDL2::SDL2 OpenGL::GL)
     else()
         # 32-bit SDL2: needs libsdl2-dev:i386 (+ libgl-dev:i386), or set
         # SDL2_LINUX_ROOT to a self-built prefix (e.g. CI's cached, user-writable
@@ -468,4 +509,39 @@ if(GE_VIDEO)
         COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:ge>/Data
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${CMAKE_SOURCE_DIR}/tools/shaders_base.txt $<TARGET_FILE_DIR:ge>/Data/shaders_base.txt)
+endif()
+
+option(GE_PORT_TESTS "Build ROM-free native layout regression tests" OFF)
+if(GE_PORT_TESTS)
+    if(NOT GE_NATIVE_64)
+        message(FATAL_ERROR "GE_PORT_TESTS requires GE_NATIVE_64")
+    endif()
+    enable_testing()
+    add_executable(native_layout_test port/tests/native_layout.c src/mema.c
+        port/src/romfile_model64.c port/src/romfile_audio.c)
+    add_test(NAME native_layout COMMAND native_layout_test)
+    add_executable(native_collision_test port/tests/native_collision.c
+        src/game/bg.c src/game/line_tri_intersect.c src/game/lightfixture.c)
+    add_executable(native_aim_test port/tests/native_aim.c src/game/chraction.c)
+    add_executable(native_stan_test port/tests/native_stan.c src/game/stan.c)
+    add_executable(native_movement_test port/tests/native_movement.c
+        src/game/chraction.c src/game/initanitable.c)
+    add_executable(native_prop_collision_test port/tests/native_prop_collision.c
+        src/game/propobj.c src/game/stan.c)
+    add_executable(native_player_test port/tests/native_player.c
+        src/game/bondview2.c src/game/initanitable.c src/game/unk_092E50.c)
+    foreach(test_target IN ITEMS native_collision_test native_aim_test native_stan_test native_movement_test native_prop_collision_test native_player_test)
+        target_compile_options(${test_target} PRIVATE -ffunction-sections -fdata-sections)
+        if(APPLE)
+            target_link_options(${test_target} PRIVATE LINKER:-dead_strip)
+        else()
+            target_link_options(${test_target} PRIVATE LINKER:--gc-sections)
+        endif()
+    endforeach()
+    add_test(NAME native_collision COMMAND native_collision_test)
+    add_test(NAME native_aim COMMAND native_aim_test)
+    add_test(NAME native_stan COMMAND native_stan_test)
+    add_test(NAME native_movement COMMAND native_movement_test)
+    add_test(NAME native_prop_collision COMMAND native_prop_collision_test)
+    add_test(NAME native_player COMMAND native_player_test)
 endif()

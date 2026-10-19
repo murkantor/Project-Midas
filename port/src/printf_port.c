@@ -26,15 +26,11 @@
  * dst[written] = 0 then lands exactly one past the copied bytes.
  *
  * Headers: <stdarg.h> resolves through the repo wrapper (include/stdarg.h)
- * which include_next's the compiler's real stdarg under GCC. vsnprintf is
- * declared manually instead of pulling <stdio.h>, dodging the glibc/repo
- * header interaction documented at the top of port/src/libultra_shim.c.
+ * which include_next's the compiler's real stdarg for host builds.
  */
 #include <ultra64.h>
 #include <stdarg.h>
-
-extern int vsnprintf(char *str, __SIZE_TYPE__ size, const char *format,
-                     va_list ap);
+#include <stdio.h>
 
 int _Printf(u8 *(*prout)(u8 *, const u8 *, __SIZE_TYPE__), u8 *arg,
             const u8 *fmt, va_list args)

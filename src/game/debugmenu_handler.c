@@ -1,4 +1,13 @@
 #include <ultra64.h>
+#include "debugmenu.h"
+#include "game/bondinv.h"
+#include "game/chr.h"
+#include "game/deb_loadallmodels.h"
+#include "game/debug_camera.h"
+#include "game/gun.h"
+#include "game/player.h"
+#include "game/ramromreplay.h"
+#include "game/bondview.h"
 #include "debugmenu_handler.h"
 #include "initgamedata.h"
 #include <boss.h>
@@ -457,7 +466,7 @@ s32 debug_menu_processor(s8 stick_h, s8 stick_v, u16 button_held, u16 button_pre
 
         if (varv0)
         {
-            stop_recording_ramrom(button_held);
+            stop_recording_ramrom();
         }
 
         return show_debug_menu_flag;

@@ -1,4 +1,5 @@
 #include <ultra64.h>
+#include "game/loadobjectmodel.h"
 #ifndef TARGET_N64
 #include <stdio.h> /* MP startpad/spawn debug log */
 #endif
@@ -123,7 +124,7 @@ void bondviewLoadSetupIntroSection(void)
 
     if (bossGetStageNum() == LEVELID_CUBA)
     {
-        resolution = (s32)mempAllocBytesInBank(0x46EA0, MEMPOOL_STAGE);
+        resolution = (uintptr_t)mempAllocBytesInBank(0x46EA0, MEMPOOL_STAGE);
         resolution = (resolution + 0x3f) & ~0x3F;
         cameraFrameCounter1 = 1;
     }
@@ -211,7 +212,7 @@ void bondviewLoadSetupIntroSection(void)
 #endif
                     }
 
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroSpawn));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroSpawn));
                 }
                 break;
 
@@ -248,7 +249,7 @@ void bondviewLoadSetupIntroSection(void)
                         }
                     }
 
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroItem));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroItem));
                 }
                 break;
 
@@ -259,7 +260,7 @@ void bondviewLoadSetupIntroSection(void)
                         give_cur_player_ammo(((struct SetupIntroAmmo*)intro_record)->ammo_type, ((struct SetupIntroAmmo*)intro_record)->ammo_amount);
                     }
 
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroAmmo));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroAmmo));
                 }
                 break;
 
@@ -278,7 +279,7 @@ void bondviewLoadSetupIntroSection(void)
                     intro_swirl->unk14.fval = intro_swirl->unk14.ival / M_U16_MAX_VALUE_F;
                     intro_swirl->unk18.fval = intro_swirl->unk18.ival / M_U16_MAX_VALUE_F;
 
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroSwirl));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroSwirl));
                 }
                 break;
 
@@ -286,7 +287,7 @@ void bondviewLoadSetupIntroSection(void)
                 {
                     g_IntroAnimationIndex = ((struct SetupIntroAnim*)intro_record)->intro_anim;
 
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroAnim));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroAnim));
                 }
                 break;
 
@@ -308,7 +309,7 @@ void bondviewLoadSetupIntroSection(void)
                     }
 #endif
 
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroCuff));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroCuff));
                 }
                 break;
 
@@ -340,7 +341,7 @@ void bondviewLoadSetupIntroSection(void)
                         }
                     }
 
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroCamera));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroCamera));
                 }
                 break;
 
@@ -362,7 +363,7 @@ void bondviewLoadSetupIntroSection(void)
 
                     if (watch_time_0);
 
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroWatch));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroWatch));
                 }
                 break;
 
@@ -387,7 +388,7 @@ void bondviewLoadSetupIntroSection(void)
                         credits++;
                     }
 
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroCredits));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroCredits));
                 }
                 break;
 
@@ -396,7 +397,7 @@ void bondviewLoadSetupIntroSection(void)
                     #ifdef DEBUG
                         ossyncprintf("unknown bondstart type %d!\n",INTRO_TYPE(intro_record));
                     #endif
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroEmpty));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroEmpty));
                 }
                 break;
 

@@ -1,4 +1,5 @@
 #include <ultra64.h>
+#include "deb.h"
 #include "joy.h"
 #include <PR/os.h>
 

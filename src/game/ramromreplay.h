@@ -41,5 +41,17 @@ void portPlayRamromDemo(s32 index);
 s32 portRamromPendingSpeedframes(void);
 #endif
 
+
+s32 get_recording_ramrom_flag(void);
+void stop_recording_ramrom(void);
+void setRamRomRecordSlot(s32 arg0);
+void replay_recorded_ramrom_from_indy(void);
+void save_ramrom_to_devtool(void);
+void load_ramrom_from_devtool(void);
+void select_ramrom_to_play(void);
+s32 interface_menu0B_runstage(void);
+void clear_ramrom_block_buffer_heading_ptrs(void);
+s32 get_is_ramrom_flag(void);
+
 #endif
 

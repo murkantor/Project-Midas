@@ -14,8 +14,7 @@
  * before the pixels, and when no pool holds that number it uses the entry's own
  * format/depth and draws from the address. So a texture made here is a 16-byte
  * 0xFF header (a number no pool holds, since texturenum is 12 bits), then the
- * pixels. This relies on the port being a 32-bit process, so a host pointer
- * fits the entry's u32 `index`.
+ * pixels. The entry uses a native-width address.
  *
  * Format: RGBA16 in host byte order (the renderer reads RAM textures as native
  * u16), 1-bit alpha with 128 and over opaque. File: Windows BMP, 24-bit or
@@ -78,7 +77,7 @@ static s32 sXhairNum = -1;
 
 static s32 texCrosshairNum(void)
 {
-    if (crosshairimage != NULL && (u32) crosshairimage->index < 0x1000u)
+    if (crosshairimage != NULL && crosshairimage->index < 0x1000u)
     {
         sXhairNum = (s32) crosshairimage->index;
     }
@@ -343,7 +342,7 @@ static s32 texLoadSlot(struct portExtTex *t)
     free(rgba);
 
     memset(&t->entry, 0, sizeof(t->entry));
-    t->entry.index  = (u32) (uintptr_t) px;
+    t->entry.index  = (uintptr_t) px;
     t->entry.width  = (u8) w;
     t->entry.height = (u8) h;
     t->entry.level  = 0;
@@ -364,18 +363,6 @@ struct sImageTableEntry *portTexExternal(const char *name)
     struct portExtTex *t;
     s32 i;
 
-    if (sizeof(void *) > 4)
-    {   /* the entry's index is a u32; a 64-bit host pointer does not fit and
-         * the ROM image is the honest answer */
-        static s32 said;
-
-        if (!said)
-        {
-            said = 1;
-            portConLogf("ge: textures: external textures need the 32-bit build\n");
-        }
-        return NULL;
-    }
     if (!texNameOk(name))
     {
         return NULL;
@@ -775,7 +762,7 @@ s32 portTexReplaceRom(struct tex *tex, u8 *data, s32 bytes)
     struct portRomTex *r = NULL;
     s32 i, c, any = 0;
 
-    if (sizeof(void *) > 4 || num < 0 || num >= PORT_TEXTURES_MAX || data == NULL || bytes <= 0)
+    if (num < 0 || num >= PORT_TEXTURES_MAX || data == NULL || bytes <= 0)
     {
         return 0;
     }
