@@ -21,6 +21,7 @@
 #include <bondconstants.h>   /* PLAYER_OPTION_* - the real enum, not a copy */
 
 #include "port_watchpages.h"
+#include "port_mods.h"
 
 /* port_options.c */
 extern s32         portOptFind(const char *key);
@@ -375,7 +376,8 @@ static const struct PortBindDef *bindTableFor(s32 dev, s32 *count)
     const struct PortBindDef *base = n64 ? sBindsN64 : sBindsPort;
     const s32 n = n64 ? (s32) (sizeof(sBindsN64) / sizeof(sBindsN64[0]))
                       : (s32) (sizeof(sBindsPort) / sizeof(sBindsPort[0]));
-    const s32 total = n + (kbm ? PORTBIND_KBM_EXTRA : 0) + PORTBIND_ALL_EXTRA;
+    const s32 mods = portModsActionCount();   /* the mods' actions, before the everyone rows */
+    const s32 total = n + (kbm ? PORTBIND_KBM_EXTRA : 0) + mods + PORTBIND_ALL_EXTRA;
     /* built once per list: the base rows, the keyboard's own (device 0), then everyone's */
     static struct PortBindDef joined[2][2][64];
     static s32 built[2][2];
@@ -396,6 +398,13 @@ static const struct PortBindDef *bindTableFor(s32 dev, s32 *count)
         for (i = 0; kbm && i < PORTBIND_KBM_EXTRA; i++)
         {
             joined[kbm][n64][k++] = sBindsKbmOnly[i];
+        }
+        for (i = 0; i < mods; i++)
+        {
+            joined[kbm][n64][k].label = portModsActionLabel(i);
+            joined[kbm][n64][k].kbKey = portModsActionName(i);
+            joined[kbm][n64][k].padKey = portModsActionName(i);
+            k++;
         }
         for (i = 0; i < PORTBIND_ALL_EXTRA; i++)
         {
@@ -704,6 +713,13 @@ static const struct PortWatchPageDef {
 #undef PWPAGE
 };
 
+static s32 watchModOptRows(void)
+{
+    const s32 n = portModsOptionCount();
+
+    return (n > 32) ? 32 : n;
+}
+
 static const struct PortWatchRowDef *rowDef(s32 page, s32 row)
 {
     if (page < 0 || page >= PORTWATCH_PAGES || row < 0)
@@ -714,6 +730,23 @@ static const struct PortWatchRowDef *rowDef(s32 page, s32 row)
     {
         dynBuild(page);
         return (row < sDynCount) ? &sDyn[row] : NULL;
+    }
+    if (page == PORTWATCH_PORTOPTS)
+    {   /* the mods' options go between the table's rows and its Back row */
+        static struct PortWatchRowDef modRows[32];
+        const s32 back = sPages[page].count - 1;
+        const s32 m = watchModOptRows();
+
+        if (row >= back && row < back + m)
+        {
+            modRows[row - back].kind = PWROW_OPT;
+            modRows[row - back].key = portModsOptionKey(row - back);
+            return &modRows[row - back];
+        }
+        if (row >= back + m)
+        {
+            row -= m;
+        }
     }
     if (row >= sPages[page].count)
     {
@@ -738,7 +771,7 @@ s32 portWatchPageRows(s32 page)
         dynBuild(page);
         return sDynCount;
     }
-    return sPages[page].count;
+    return sPages[page].count + ((page == PORTWATCH_PORTOPTS) ? watchModOptRows() : 0);
 }
 
 /* ---- device selection ---------------------------------------------------- */

@@ -650,11 +650,29 @@ static s32 texGroupTile(s32 ctx, s32 num, s32 *w, s32 *h, u8 **rgba)
  * picture) as top-down RGBA8 already flipped for the pool, whose row 0 is the
  * bottom of the picture as drawn. 0 = no file.
  */
+static void texFlipRows(u8 *rgba, s32 w, s32 h)
+{
+    u8 *tmp = (u8 *) malloc((size_t) w * 4);
+    s32 y;
+
+    if (tmp == NULL)
+    {
+        return;
+    }
+    for (y = 0; y < h / 2; y++)
+    {
+        u8 *a = rgba + (size_t) y * w * 4;
+        u8 *b = rgba + (size_t) (h - 1 - y) * w * 4;
+        memcpy(tmp, a, (size_t) w * 4);
+        memcpy(a, b, (size_t) w * 4);
+        memcpy(b, tmp, (size_t) w * 4);
+    }
+    free(tmp);
+}
+
 static s32 texRomPicture(s32 ctx, s32 num, s32 *bw, s32 *bh, u8 **rgba)
 {
     char name[16];
-    u8 *tmp;
-    s32 y;
 
     snprintf(name, sizeof(name), "t%05d", num);
     if (!texReadBmpFile(sCtxDir[ctx], name, 0, bw, bh, rgba)
@@ -662,20 +680,93 @@ static s32 texRomPicture(s32 ctx, s32 num, s32 *bw, s32 *bh, u8 **rgba)
     {
         return 0;
     }
-    tmp = (u8 *) malloc((size_t) *bw * 4);
-    if (tmp != NULL)
-    {
-        for (y = 0; y < *bh / 2; y++)
-        {
-            u8 *a = *rgba + (size_t) y * *bw * 4;
-            u8 *b = *rgba + (size_t) (*bh - 1 - y) * *bw * 4;
-            memcpy(tmp, a, (size_t) *bw * 4);
-            memcpy(a, b, (size_t) *bw * 4);
-            memcpy(b, tmp, (size_t) *bw * 4);
-        }
-        free(tmp);
-    }
+    texFlipRows(*rgba, *bw, *bh);
     return 1;
+}
+
+/* set while a per-model override encodes: CI textures get a palette of their own */
+static s32 sRebuildPal;
+
+/**
+ * `ncol` palette entries (RGBA5551, or IA88 when `isia`) for `n` RGBA8 pixels:
+ * k-means, seeded across the luma range so dark and light parts both get
+ * entries.
+ */
+static void texQuantize(const u8 *rgba, s32 n, u16 *pal, s32 ncol, s32 isia)
+{
+    f32 cr[256], cg[256], cb[256], ca[256];
+    f32 sr[256], sg[256], sb[256], sa[256];
+    s32 cnt[256];
+    s32 *order;
+    s32 i, k, it;
+
+    if ((n <= 0) || (ncol <= 0) || (ncol > 256))
+    {
+        return;
+    }
+    order = (s32 *) malloc((size_t) n * sizeof(s32));
+    if (order == NULL)
+    {
+        return;
+    }
+    /* seeds: pixels at even steps through a luma counting sort */
+    {
+        s32 bucket[257];
+
+        memset(bucket, 0, sizeof(bucket));
+        for (i = 0; i < n; i++) bucket[texLuma(rgba + i * 4) + 1]++;
+        for (i = 1; i < 257; i++) bucket[i] += bucket[i - 1];
+        for (i = 0; i < n; i++) order[bucket[texLuma(rgba + i * 4)]++] = i;
+    }
+    for (k = 0; k < ncol; k++)
+    {
+        const u8 *p = rgba + order[(s32) (((s64) k * (n - 1)) / ((ncol > 1) ? (ncol - 1) : 1))] * 4;
+
+        cr[k] = p[0]; cg[k] = p[1]; cb[k] = p[2]; ca[k] = p[3];
+    }
+    free(order);
+    for (it = 0; it < 12; it++)
+    {
+        memset(sr, 0, sizeof(sr)); memset(sg, 0, sizeof(sg));
+        memset(sb, 0, sizeof(sb)); memset(sa, 0, sizeof(sa));
+        memset(cnt, 0, sizeof(cnt));
+        for (i = 0; i < n; i++)
+        {
+            const u8 *p = rgba + i * 4;
+            f32 best = 1.0e30f;
+            s32 bi = 0;
+
+            for (k = 0; k < ncol; k++)
+            {
+                const f32 dr = cr[k] - p[0], dg = cg[k] - p[1], db = cb[k] - p[2], da = ca[k] - p[3];
+                const f32 d = (dr * dr) + (dg * dg) + (db * db) + (da * da * 2.0f);
+
+                if (d < best) { best = d; bi = k; }
+            }
+            sr[bi] += p[0]; sg[bi] += p[1]; sb[bi] += p[2]; sa[bi] += p[3];
+            cnt[bi]++;
+        }
+        for (k = 0; k < ncol; k++)
+        {
+            if (cnt[k] > 0)
+            {
+                cr[k] = sr[k] / cnt[k]; cg[k] = sg[k] / cnt[k]; cb[k] = sb[k] / cnt[k]; ca[k] = sa[k] / cnt[k];
+            }
+        }
+    }
+    for (k = 0; k < ncol; k++)
+    {
+        const s32 r = (s32) cr[k], g = (s32) cg[k], b = (s32) cb[k], a = (s32) ca[k];
+
+        if (isia)
+        {
+            pal[k] = (u16) ((((r * 77) + (g * 151) + (b * 28)) >> 8) << 8 | a);
+        }
+        else
+        {
+            pal[k] = (u16) ((r >> 3) << 11 | (g >> 3) << 6 | (b >> 3) << 1 | (a >= 128));
+        }
+    }
 }
 
 /**
@@ -734,6 +825,18 @@ static s32 texRomEncode(const struct tex *tex, u8 *blob, s32 bytes, const u8 *rg
     if (isci)
     {
         memcpy(pal, blob + total, (size_t) ncol * 2);   /* native u16s, image.c writes them so */
+        if (sRebuildPal)
+        {   /* a per-model override owns its copy: give it the picture's colours */
+            u8 *lv0 = (u8 *) malloc((size_t) lw[0] * lh[0] * 4);
+
+            if (lv0 != NULL)
+            {
+                texResample(rgba, bw, bh, lv0, lw[0], lh[0]);
+                texQuantize(lv0, lw[0] * lh[0], pal, ncol, isia);
+                memcpy(blob + total, pal, (size_t) ncol * 2);
+                free(lv0);
+            }
+        }
     }
     for (i = 0; i < nlevels; i++)
     {
@@ -750,7 +853,7 @@ static s32 texRomEncode(const struct tex *tex, u8 *blob, s32 bytes, const u8 *rg
     }
     portConLogf("ge: textures: t%05d.bmp %dx%d -> ROM texture %d (%dx%d, fmt %d depth %d, %d level%s%s)\n",
                 num, bw, bh, num, lw[0], lh[0], gbifmt, depth, nlevels, nlevels == 1 ? "" : "s",
-                isci ? ", palette kept" : "");
+                isci ? (sRebuildPal ? ", own palette" : ", palette kept") : "");
     return 1;
 }
 
@@ -864,6 +967,54 @@ s32 portTexReplaceRom(struct tex *tex, u8 *data, s32 bytes)
     }
     memcpy(data, texRomBytesFor(r, sCtx), (size_t) bytes);
     return 1;
+}
+
+/* ---- per-model textures ------------------------------------------------- */
+
+/* Data/Textures/Models/<dir>/t<num>.bmp: only for a model loaded into its own
+ * pool (the first-person guns), so a texture the ROM shares between guns can
+ * change on one of them. CI textures get their own palette here. */
+static const char *sModelDir;
+
+void portTexModelDir(const char *dir)
+{
+    sModelDir = dir;
+}
+
+const char *portTexModelDirGet(void)
+{
+    return sModelDir;
+}
+
+/** texLoad (image.c), after portTexReplaceRom. 1 = the pool was rewritten. */
+s32 portTexReplaceModel(struct tex *tex, u8 *data, s32 bytes, const void *pool)
+{
+    char dir[64], name[16];
+    u8 *rgba = NULL;
+    s32 bw = 0, bh = 0, ok;
+
+    extern struct texpool *portModelDirTexPool(void); /* objecthandler_2.c */
+
+    if (sModelDir == NULL || pool != (const void *) portModelDirTexPool() || sizeof(void *) > 4 || data == NULL || bytes <= 0)
+    {
+        return 0;
+    }
+    snprintf(dir, sizeof(dir), "Data/Textures/Models/%s", sModelDir);
+    snprintf(name, sizeof(name), "t%05d", (s32) tex->texturenum);
+    if (!texReadBmpFile(dir, name, 0, &bw, &bh, &rgba))
+    {
+        return 0;
+    }
+    texFlipRows(rgba, bw, bh);
+    sRebuildPal = 1;
+    ok = texRomEncode(tex, data, bytes, rgba, bw, bh);
+    sRebuildPal = 0;
+    free(rgba);
+    if (ok)
+    {
+        portConLogf("ge: textures: model %s: t%05d replaced\n", sModelDir, (s32) tex->texturenum);
+    }
+    return ok;
 }
 
 /**

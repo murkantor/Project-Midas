@@ -82,6 +82,23 @@ struct texpool *portModelTexPool(void)
     return &s_ModelPool;
 }
 
+/* A gun with its own Data/Textures/Models/ folder (port_textures.c) loads into
+ * this pool instead, so its copies of shared textures can differ. */
+static struct texpool s_ModelDirPool;
+
+struct texpool *portModelDirTexPool(void)
+{
+    static u8 *arena;
+
+    if (arena == NULL)
+    {
+        extern void *portAllocHigh(u32 size);
+        arena = portAllocHigh(0x40000);
+        texInitPool(&s_ModelDirPool, arena, 0x40000);
+    }
+    return &s_ModelDirPool;
+}
+
 /* NOTE: do not re-add per-stage scoping (a stage watermark) to these lookups;
  * it was tried and reverted because it regressed shadow corruption on Bunker 1
  * -> Caverns -> Bunker 1. Evidence points to one texture number resolving
@@ -116,8 +133,12 @@ void sub_GAME_7F0762E0(ModelFileHeader *objheader, u8 *name, u8 *dst, struct tex
      * own allocation. The iterator cursor MUST advance before the node is
      * repointed, because the Secondary lookup compares against the
      * pre-replacement pointer. */
-    texLoadFromModelFileHeader(objheader, portModelTexPool());
-    buffer = portModelTexPool();
+    {
+        extern const char *portTexModelDirGet(void);
+
+        buffer = (portTexModelDirGet() != NULL) ? portModelDirTexPool() : portModelTexPool();
+    }
+    texLoadFromModelFileHeader(objheader, buffer);
 
     node = NULL;
     gdl = NULL;

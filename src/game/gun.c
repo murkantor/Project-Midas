@@ -952,6 +952,14 @@ void used_to_load_1st_person_model_on_demand(GUNHAND hand)
                 size_buffer_weapon = getSizeBufferWeaponInHand(hand);
 
                 g_CurrentPlayer->copy_of_body_obj_header[hand] = *ptr_weapon_model;
+#ifndef TARGET_N64
+                {
+                    extern const char *portModsItemModelDir(s32 item);   /* port_mods.c */
+                    extern void portTexModelDir(const char *dir);
+
+                    portTexModelDir(portModsItemModelDir(item));
+                }
+#endif
 
                 if (item == ITEM_SUIT_LF_HAND)
                 {
@@ -968,6 +976,13 @@ void used_to_load_1st_person_model_on_demand(GUNHAND hand)
                     texInitPool(&g_CurrentPlayer->item_related[hand], &buffer_weapon[D_80032464[hand]], size_buffer_weapon - D_80032464[hand]);
                     load_object_fill_header(&g_CurrentPlayer->copy_of_body_obj_header[hand], (u8 *)ptr_item_text, buffer_weapon, D_80032464[hand], &g_CurrentPlayer->item_related[hand]);
                 }
+#ifndef TARGET_N64
+                {
+                    extern void portTexModelDir(const char *dir);
+
+                    portTexModelDir(NULL);
+                }
+#endif
             }
 
             g_CurrentPlayer->hand_invisible[hand] = 1;

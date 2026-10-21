@@ -3,7 +3,7 @@ PROJECT MIDAS - midas.ini HELP
 
 midas.ini is the settings file for Project Midas. It sits next to the game
 executable and holds plain key=value lines in the sections [input],
-[display] and an optional [data]. It has no comments; this file explains
+[display] and the optional [data] and [mods]. It has no comments; this file explains
 the keys. Keyboard and mouse binds are kept separately, in
 Data/Devices/kbm.gedevice (see the last section).
 
@@ -237,6 +237,23 @@ mipmaps is set by Classic Mode; leave it as it is.
   rom  | (none)  | Path to your GoldenEye 007 (USA) ROM. A relative path is
        |         | read from the game's folder. Not needed if the ROM is in
        |         | the Data folder. See Data/README.txt for the full order.
+
+
+==============================================================================
+[mods]  optional
+==============================================================================
+
+  Key   | Default | What it does
+  ------+---------+----------------------------------------------------------
+  load  | (all)   | Which mods in Data/Mods load: names separated by commas
+        |         | or spaces (load=bhop,funguns), all, or none. Listed mods
+        |         | load even with enabled=0 in their mod.ini; without this
+        |         | key every mod whose mod.ini has enabled=1 loads. The
+        |         | GE_MODS environment variable, same syntax, overrides it
+        |         | for one run, and GE_NOMODS=1 loads none. Read at start.
+
+A mod's own settings (bhop's jumping, jump_height, ...) live in [input]
+with the rest; see mods/README.md for each.
 
 
 ==============================================================================

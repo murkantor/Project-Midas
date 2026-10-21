@@ -23,6 +23,7 @@
 
 #include "port_console.h"
 #include "port_console_env.h"
+#include "port_mods.h"
 #include "game/textrelated.h"
 #include "game/dyn.h"
 #include "fr.h"
@@ -392,6 +393,11 @@ static s32 conStrHasI(const char *hay, const char *needle)
     return 0;
 }
 
+static void conPrintLn0(const char *s)
+{
+    conPrintLn(0, s);
+}
+
 static void conCmdHelp(void)
 {
     conPrintLn(0, "client commands (cl_ = changes the game; saved to midas.ini):");
@@ -404,6 +410,8 @@ static void conCmdHelp(void)
     conPrintLn(0, "console commands:");
     conPrintLn(0, "  list [text]           the cl_ settings matching key or label");
     conPrintLn(0, "  harness [text]        the GE_* diagnostic env knobs");
+    conPrintLn(0, "  mods                  the loaded mods (Data/Mods)");
+    portModsCommandHelp(conPrintLn0);
     conPrintLn(0, "  clear                 empty the scrollback");
     conPrintLn(0, "  help                  this");
     conPrintLn(0, "keys: PgUp/PgDn/Home/End scroll, Up/Down recall");
@@ -707,6 +715,15 @@ static void conCmdHarness(const char *filter)
     }
 }
 
+/* a mod command's whole argument text */
+static const char *conJoinArgs(const char *arg1, const char *arg2)
+{
+    static char buf[200];
+
+    snprintf(buf, sizeof(buf), "%s%s%s", arg1 ? arg1 : "", arg2 ? " " : "", arg2 ? arg2 : "");
+    return buf;
+}
+
 static void conExecute(char *line)
 {
     char *cmd;
@@ -783,6 +800,14 @@ static void conExecute(char *line)
             snprintf(value, sizeof(value), "%s", arg1);
         }
         conCmdClient(cmd + 3, arg1 != NULL ? value : NULL);
+    }
+    else if (conStrEqI(cmd, "mods"))
+    {
+        portModsList(conPrintLn0);
+    }
+    else if (portModsCommand(cmd, conJoinArgs(arg1, arg2)))
+    {
+        /* a mod's command (port_mods.c); it printed */
     }
     else if (conStrEqI(cmd, "clear"))
     {

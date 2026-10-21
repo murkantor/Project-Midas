@@ -29,6 +29,7 @@
 #endif
 #include "game/frametiming.h"   /* portTickSetHz: [display] tickhz */
 #include "romdata.h"            /* romdataIsIniKey: [data] keys are not "unknown controls" */
+#include "port_mods.h"          /* portModsIsIniKey: nor are [mods] keys */
 
 /* port_console.c: same output as the fprintf(stderr, ...) this replaced,
  * plus a silent copy in the tilde console ring (spec section 7). */
@@ -3124,7 +3125,8 @@ static void videoLoadConfig(void)
             char *val = iniTrim(eq + 1);
 
             if (!videoSetDisplayOption(key, val) && !portInputSetOption(key, val) && !portJoyPortSetOption(key, val)
-                && !romdataIsIniKey(key) /* [data] rom=: romdata.c reads it itself, section-aware */)
+                && !romdataIsIniKey(key) /* [data] rom=: romdata.c reads it itself, section-aware */
+                && !portModsIsIniKey(key) /* [mods] load=: port_mods.c, the same way */)
             {
                 portConLogf("ge: midas.ini: unknown control \"%s\"\n", key);
             }

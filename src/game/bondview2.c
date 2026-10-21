@@ -2347,6 +2347,15 @@ s32 bondviewTryMoveToStan(struct coord3d *arg0, StandTile **stan)
 
         bondviewGetCollisionRadius(g_CurrentPlayer->prop, &collision_radius, &height, &always_30);
 
+#ifndef TARGET_N64
+        if (sp90 != NULL)
+        {
+            extern void portModsPlayerStepWindow(StandTile *floor, f32 *height, f32 *always_30);   /* port_mods.c */
+
+            portModsPlayerStepWindow(sp90, &height, &always_30);
+        }
+#endif
+
         if (g_WorldTankProp != NULL)
         {
             sub_GAME_7F03D058(g_WorldTankProp, 0);
@@ -3320,6 +3329,15 @@ void bondviewCalcUpdatePlayerCollision(struct coord3d *offset, s32 allow_scoot)
                                     && stanSavedColl_tile == NULL) ? g_portBlockProp : NULL;
             s_portBlockCauseTop = g_portBlockTop;
         }
+        {   /* a mod can take a move a tile edge refused (port_mods.c); a prop
+             * refusal stays a refusal */
+            extern s32 portModsPlayerBlocked(struct coord3d *next_pos);
+
+            if ((s_portBlockCauseProp == NULL) && portModsPlayerBlocked(&next_pos))
+            {
+                goto mod_moved;
+            }
+        }
 #endif
         // return values are:
         //   1 if able to update stan and collision position
@@ -3377,6 +3395,7 @@ void bondviewCalcUpdatePlayerCollision(struct coord3d *offset, s32 allow_scoot)
                 fflush(stderr);
             }
         }
+mod_moved:;
 #endif
     }
 
@@ -5594,6 +5613,13 @@ void bondviewUpdatePlayerY(s32 use_stanHeight, f32 stanHeight_offset)
             }
 
             g_CurrentPlayer->stanHeight = sp64;
+#ifndef TARGET_N64
+            {
+                extern f32 portModsPlayerFloor(f32 floor);   /* port_mods.c */
+
+                g_CurrentPlayer->stanHeight = portModsPlayerFloor(g_CurrentPlayer->stanHeight);
+            }
+#endif
         }
 
         if ((g_CurrentPlayer->field_2A6C != 0) && (g_CurrentPlayer->field_70 < g_CurrentPlayer->stanHeight))
@@ -5602,6 +5628,14 @@ void bondviewUpdatePlayerY(s32 use_stanHeight, f32 stanHeight_offset)
             g_CurrentPlayer->field_488.current_tile_ptr = g_CurrentPlayer->field_2A70;
             g_CurrentPlayer->field_2A70 = NULL;
         }
+
+#ifndef TARGET_N64
+        {
+            extern void portModsPlayerY(s32 use_stanHeight);   /* port_mods.c */
+
+            portModsPlayerY(use_stanHeight);
+        }
+#endif
 
         if ((g_CurrentPlayer->field_7C >= 0.0f) || (g_CurrentPlayer->field_70 < g_CurrentPlayer->stanHeight))
         {
@@ -6755,6 +6789,15 @@ void bondviewProcessInput(s8 stick_x, s8 stick_y, u16 buttons, u16 oldbuttons)
 
             if (lvlGetControlsLockedFlag() == 0 && disablePlayerActionsWhenPausedOrInMpMenu())
             {
+#ifndef TARGET_N64
+                extern s32 portModsWeaponAim(s32 pressed);   /* port_mods.c */
+
+                if (portModsWeaponAim(sp100))
+                {   /* a mod weapon's second trigger: no aim mode */
+                    g_CurrentPlayer->insightaimmode = 0;
+                }
+                else
+#endif
                 if (cur_player_get_aim_control() == 0)
                 {
                     g_CurrentPlayer->insightaimmode = sp104;
@@ -6992,6 +7035,15 @@ void bondviewProcessInput(s8 stick_x, s8 stick_y, u16 buttons, u16 oldbuttons)
             {
                 if (disablePlayerActionsWhenPausedOrInMpMenu())
                 {
+#ifndef TARGET_N64
+                    extern s32 portModsWeaponAim(s32 pressed);   /* port_mods.c */
+
+                    if (portModsWeaponAim(((buttons & ~oldbuttons) & aimButtons) != 0))
+                    {   /* a mod weapon's second trigger: no aim mode */
+                        g_CurrentPlayer->insightaimmode = 0;
+                    }
+                    else
+#endif
                     if (cur_player_get_aim_control() == 0)
                     {
                         g_CurrentPlayer->insightaimmode = (buttons & aimButtons) != 0;
@@ -10391,6 +10443,16 @@ void MoveBond(s8 stick_x, s8 stick_y, u16 buttons, u16 oldbuttons)
                 ) * g_GlobalTimerDelta * 10.0f;
         }
 
+#ifndef TARGET_N64
+        {
+            extern void portModsPlayerMove(struct coord3d *move, f32 walkx, f32 walkz);   /* port_mods.c */
+
+            portModsPlayerMove(&move_offset,
+                               (headpos_z * g_CurrentPlayer->field_488.theta_transform.f[0]) - (headpos_x * g_CurrentPlayer->field_488.theta_transform.f[2]),
+                               (headpos_z * g_CurrentPlayer->field_488.theta_transform.f[2]) + (headpos_x * g_CurrentPlayer->field_488.theta_transform.f[0]));
+        }
+#endif
+
         bondviewCalcUpdatePlayerCollision(&move_offset, (g_CurrentPlayer->swaytarget == 0.0f));
 
         stanTileDistanceRelated(
@@ -10537,6 +10599,13 @@ void MoveBond(s8 stick_x, s8 stick_y, u16 buttons, u16 oldbuttons)
 
         ftemp_col_x = g_CurrentPlayer->field_488.collision_position.f[0] - start_collision_pos_x;
         ftemp_col_z = g_CurrentPlayer->field_488.collision_position.f[2] - start_collision_pos_z;
+#ifndef TARGET_N64
+        {
+            extern void portModsPlayerMoved(f32 dx, f32 dz);   /* port_mods.c */
+
+            portModsPlayerMoved(ftemp_col_x - sp220, ftemp_col_z - sp21C);
+        }
+#endif
         sp240 = (move_offset.f[0] * move_offset.f[0]) + (move_offset.f[2] * move_offset.f[2]);
         if (sp240 != 0.0f)
         {
@@ -12491,6 +12560,11 @@ static Gfx *portDrawFpsCounter(Gfx *gdl)
             PORT_HUD_ANCHOR_OFF(gdl);
             gdl = combiner_bayer_lod_perspective(gdl);
         }
+    }
+    {
+        extern Gfx *portModsRenderHud(Gfx *gdl);   /* port_mods.c */
+
+        gdl = portModsRenderHud(gdl);
     }
     return gdl;
 }

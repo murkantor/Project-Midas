@@ -143,8 +143,9 @@ enum
     PM_PORT_FIRST,
     /* +19 mouse_unlock (never bound on a pad, but the order must match
      * joy_port's, checked at init),
-     * +20 classic_toggle (Classic Mode bindable on a pad, as Tab is on the keyboard) */
-    PM_PORT_LAST = PM_PORT_FIRST + 20,
+     * +20 classic_toggle (Classic Mode bindable on a pad, as Tab is on the keyboard),
+     * +21..+28 the mod actions (renamed by portInputModActionName) */
+    PM_PORT_LAST = PM_PORT_FIRST + 28,
     PM_COUNT
 };
 #define PM_PORT_COUNT (PM_PORT_LAST - PM_PORT_FIRST + 1)
@@ -165,7 +166,19 @@ static const char *sPadMapNames[PM_COUNT] =
     "zoom_in", "zoom_out",
     "menu_accept", "menu_back",
     "mouse_unlock", "classic_toggle",
+    /* placeholders until a mod claims the slot */
+    "mod1", "mod2", "mod3", "mod4", "mod5", "mod6", "mod7", "mod8",
 };
+#define PM_PORT_MOD_FIRST (PM_PORT_FIRST + 21)
+
+/** port_mods.c, as a mod claims action slot `slot`: the pad map row takes its name. */
+void portInputModActionName(s32 slot, const char *name)
+{
+    if (slot >= 0 && PM_PORT_MOD_FIRST + slot <= PM_PORT_LAST)
+    {
+        sPadMapNames[PM_PORT_MOD_FIRST + slot] = name;
+    }
+}
 /* The raw (unmapped DInput) fallback layout of portInputPadMerge expressed as
  * map tokens, so the launcher, first-rebind seed and bind rows can describe it.
  * Keep in step with the merge's fixed reads; from PM_UNBOUND_FIRST on it binds
@@ -179,6 +192,7 @@ static const char *const sPadRawFallback[PM_UNBOUND_FIRST] =
     "a2+", "a3-",
 };
 extern const char *portJoyPortBindName(s32 i); /* joy_port.c action names, for the order check */
+extern s32 portJoyPortBindCount(void);
 extern void portJoyPortPadDown(s32 pad, s32 act);
 #define PM_PORT_NEXT_INV 8 /* joy_port.c PORTACT_NEXT_INV - "next gadget", also DEF_PORT(8) below */
 #define PM_PORT_CLASSIC_TOGGLE 20 /* joy_port.c PORTACT_CLASSIC_TOGGLE (order checked at init) */
@@ -2080,7 +2094,7 @@ void portInputInit(void)
 
     /* the padN_<port action> rows must line up with joy_port.c's action
      * table (PM_PORT_FIRST + i <-> PORTACT i) - shout if someone reorders one */
-    for (i = 0; i < PM_PORT_COUNT; i++)
+    for (i = 0; i < PM_PORT_COUNT && i < portJoyPortBindCount(); i++)
     {
         const char *n = portJoyPortBindName(i);
         if (n == NULL || SDL_strcmp(n, sPadMapNames[PM_PORT_FIRST + i]) != 0)

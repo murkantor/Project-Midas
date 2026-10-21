@@ -819,6 +819,14 @@ int main(int argc, char **argv)
         portAllocHighReserve();
     }
 
+    /* Data/Mods (port_mods.c): after the arenas so a mod's DLL can't take
+     * their address range, before midas.ini so mod options and binds parse */
+    {
+        extern void portModsLoad(void);
+
+        portModsLoad();
+    }
+
 #ifdef _WIN32
     /* always-on: Steam's injected overlay is a prime suspect in crash
      * reports - say whether it is inside this process. GetModuleHandle

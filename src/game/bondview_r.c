@@ -416,6 +416,13 @@ void bondviewLoadSetupIntroSection(void)
     }
 
     bondinvAddInvItem(ITEM_FIST);
+#ifndef TARGET_N64
+    {
+        extern void portModsLevelStart(void);   /* port_mods.c */
+
+        portModsLevelStart();
+    }
+#endif
 
     if (set_starting_weapon == 0)
     {

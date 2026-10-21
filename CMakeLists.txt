@@ -40,17 +40,14 @@ add_compile_options(
 # pointer-laden .data needs no PIC indirection; a PIE final link would reject
 # their R_386_32 relocations. MinGW PE has no PIE concept and its gcc driver
 # rejects the flag, so it is ELF-only.
+# The exe-only half (image base, stack, -no-pie) is set on the ge target below,
+# so mod libraries (mods/) don't inherit it.
 if(WIN32)
-    # Statically link libstdc++/libgcc so the exe needs no extra DLLs, set the
-    # image base above the N64 segment range so gfx_pc.cpp seg_addr can tell
-    # addresses from segment refs, and use a 16MB stack (recursive room/portal
-    # walks overflow 1MB).
-    add_link_options(-m32 -static-libgcc -static-libstdc++
-                     -Wl,--image-base=0x10000000 -Wl,--disable-dynamicbase
-                     -Wl,--stack,16777216)
+    # Statically link libstdc++/libgcc so the exe needs no extra DLLs.
+    add_link_options(-m32 -static-libgcc -static-libstdc++)
     link_libraries(dbghelp)
 else()
-    add_link_options(-m32 -no-pie)
+    add_link_options(-m32)
 endif()
 
 add_compile_definitions(
@@ -400,7 +397,18 @@ add_executable(ge ${GAME_SRC} ${ENGINE_SRC} ${GU_SRC} ${PORT_SRC}
                ${ASSET_LOOSE_SRC} ${ASSET_OBJS} ${FAST3D_SRC})
 # The executable is named ProjectMidas, but the CMake target stays `ge` so build
 # scripts keep working, and ge_direct.log/Profiles keep their names.
-set_target_properties(ge PROPERTIES OUTPUT_NAME ProjectMidas)
+# ENABLE_EXPORTS: every global is visible to Data/Mods libraries (port_mods.c);
+# on Windows it also writes the import library they link against.
+set_target_properties(ge PROPERTIES OUTPUT_NAME ProjectMidas ENABLE_EXPORTS ON)
+if(WIN32)
+    # The image base above the N64 segment range so gfx_pc.cpp seg_addr can tell
+    # addresses from segment refs, and a 16MB stack (recursive room/portal
+    # walks overflow 1MB). An exe exports nothing unless told to.
+    target_link_options(ge PRIVATE -Wl,--image-base=0x10000000 -Wl,--disable-dynamicbase
+                        -Wl,--stack,16777216 -Wl,--export-all-symbols)
+else()
+    target_link_options(ge PRIVATE -no-pie)
+endif()
 # The exe's own icon (Explorer, a pinned taskbar entry): port/win/ProjectMidas.ico,
 # generated with the window icon by scripts/port/make_icon.py.
 if(WIN32)
@@ -426,7 +434,18 @@ add_dependencies(ge ge_buildinfo)
 target_include_directories(ge PRIVATE ${CMAKE_BINARY_DIR}/generated)
 
 # libm: sinf/cosf/sqrtf (math_sincos.s and gu asm on N64; libm on PC).
+# libdl: port_mods.c dlopen.
 target_link_libraries(ge m)
+if(NOT WIN32)
+    target_link_libraries(ge dl)
+endif()
+
+# Native C mods (mods/, API in port/include/midas_mod.h), built into
+# <build>/Data/Mods/<name>/ with the game's own flags so struct layouts match.
+option(GE_MODS "Build the bundled mods in mods/" ON)
+if(GE_MODS)
+    add_subdirectory(mods)
+endif()
 
 if(GE_VIDEO)
     if(WIN32)

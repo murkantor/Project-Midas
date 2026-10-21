@@ -112,6 +112,10 @@ enum {
      * video.c takes the edge off the key (portVideoClassicTogglePressed) and
      * bondview2.c acts on it in play. */
     PORTACT_CLASSIC_TOGGLE,
+    /* Mod actions (port_mods.c): claimed in order, named by the mod. The
+     * input_pc.c pad map has the same eight rows. */
+    PORTACT_MOD_FIRST,
+    PORTACT_MOD_LAST = PORTACT_MOD_FIRST + 7,
     PORTACT_COUNT
 };
 
@@ -158,7 +162,21 @@ static const struct {
     /* F1 has always been this key; it is now just a default */
     [PORTACT_MOUSE_UNLOCK]     = { "mouse_unlock",     "F1",       1 },
     [PORTACT_CLASSIC_TOGGLE]   = { "classic_toggle",   "Tab",      1 },
+    /* one-shots, so a mod gets both the latch and the live level (sPrevDown);
+     * name and default come from port_mods.c */
+    [PORTACT_MOD_FIRST ... PORTACT_MOD_LAST] = { NULL, "", 1 },
 };
+
+#include "port_mods.h"
+
+/** sPortActs[i].name, or the mod's name for a claimed mod slot (NULL unclaimed). */
+static const char *joyPortActName(s32 i)
+{
+    if (i >= PORTACT_MOD_FIRST && i <= PORTACT_MOD_LAST) {
+        return portModsActionName(i - PORTACT_MOD_FIRST);
+    }
+    return (i >= 0 && i < PORTACT_COUNT) ? sPortActs[i].name : NULL;
+}
 
 /* [input] detonate_use_reload (default ON): with remote mines in the right
  * hand a use or reload press DETONATES instead of using / reloading - the
@@ -228,19 +246,23 @@ static s32 joyPortDbg(void)
     return sDbg;
 }
 
+/* unclaimed mod slots are not binds at all: no ini key, no rebind row */
 s32 portJoyPortBindCount(void)
 {
-    return PORTACT_COUNT;
+    return PORTACT_MOD_FIRST + portModsActionCount();
 }
 
 const char *portJoyPortBindName(s32 i)
 {
-    return (i >= 0 && i < PORTACT_COUNT) ? sPortActs[i].name : NULL;
+    return (i < portJoyPortBindCount()) ? joyPortActName(i) : NULL;
 }
 
 const char *portJoyPortBindDefault(s32 i)
 {
-    return (i >= 0 && i < PORTACT_COUNT) ? sPortActs[i].defkeys : "";
+    if (i >= PORTACT_MOD_FIRST && i < portJoyPortBindCount()) {
+        return portModsActionDefault(i - PORTACT_MOD_FIRST);
+    }
+    return (i >= 0 && i < PORTACT_MOD_FIRST) ? sPortActs[i].defkeys : "";
 }
 
 s32 portJoyPortAlwaysWalk(void)
@@ -303,6 +325,9 @@ s32 portJoyPortSetOption(const char *key, const char *value)
             sPadAutoAimOwn[pad] = joyPortOwnValue(value);
             return 1;
         }
+    }
+    if (portModsSetOption(key, value)) {
+        return 1;
     }
     {   /* [input] playerN_profile: who is sitting where (port_profiles.c) */
         extern s32 portProfileIniKey(const char *key, const char *value);
@@ -397,7 +422,7 @@ s32 portJoyPortOptionGet(const char *key, s32 *out)
         *out = sShootNextPrev;
         return 1;
     }
-    return 0;
+    return portModsOptionGet(key, out);
 }
 
 s32 portJoyPortOptionSet(const char *key, s32 v)
@@ -414,7 +439,7 @@ s32 portJoyPortOptionSet(const char *key, s32 v)
         sShootNextPrev = v != 0;
         return 1;
     }
-    return 0;
+    return portModsOptionSet(key, v);
 }
 
 /* ---- harness: GE_JOYPORT_AUTO ------------------------------------------- */
@@ -439,7 +464,7 @@ static void joyPortAutoParse(void)
         if (*e == ':') {
             e++;
             for (i = 0; i < PORTACT_COUNT; i++) {
-                if (strcmp(name, sPortActs[i].name) == 0) {
+                if (joyPortActName(i) != NULL && strcmp(name, joyPortActName(i)) == 0) {
                     sAutoAct[sAutoCount] = i;
                     sAutoPoll[sAutoCount] = (u32) atoi(e);
                     sAutoCount++;
@@ -498,7 +523,7 @@ void portJoyPortPollCommit(void)
         if (sAutoPoll[i] == sPollCount) {
             sPending[0][sAutoAct[i]] = 1;
             if (joyPortDbg()) {
-                portConLogf("ge: joyport: AUTO press %s at poll %u\n", sPortActs[sAutoAct[i]].name, sPollCount);
+                portConLogf("ge: joyport: AUTO press %s at poll %u\n", joyPortActName(sAutoAct[i]), sPollCount);
             }
         }
     }
@@ -599,6 +624,28 @@ s32 portJoyPortWatchStep(void)
     prev = portJoyPortTake(pad, PORTACT_WATCH_PREV);
     next = portJoyPortTake(pad, PORTACT_WATCH_NEXT);
     return next ? 1 : (prev ? -1 : 0);
+}
+
+/** port_mods.c action_pressed: a latched press of mod slot `slot`, taken. */
+s32 portJoyPortModTake(s32 slot)
+{
+    s32 pad = joyPortPad();
+
+    if (pad < 0 || slot < 0 || slot > PORTACT_MOD_LAST - PORTACT_MOD_FIRST) {
+        return 0;
+    }
+    return portJoyPortTake(pad, PORTACT_MOD_FIRST + slot) && joyPortPermitted();
+}
+
+/** port_mods.c action_held: the live level (a one-shot's is sPrevDown). */
+s32 portJoyPortModDown(s32 slot)
+{
+    s32 pad = joyPortPad();
+
+    if (pad < 0 || slot < 0 || slot > PORTACT_MOD_LAST - PORTACT_MOD_FIRST) {
+        return 0;
+    }
+    return sPrevDown[pad][PORTACT_MOD_FIRST + slot] && joyPortPermitted();
 }
 
 /**

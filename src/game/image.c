@@ -2706,7 +2706,10 @@ void texLoad(s32 *updateword, struct texpool *pool)
                 extern s32 portTexReplaceRom(struct tex *t, u8 *data, s32 bytes);
                 extern void portTexCrosshairLoaded(struct tex *t, u8 *data, s32 bytes);
 
+                extern s32 portTexReplaceModel(struct tex *t, u8 *data, s32 bytes, const void *pool);
+
                 portTexReplaceRom(tex, pool->leftpos, bytesout);
+                portTexReplaceModel(tex, pool->leftpos, bytesout, pool);
                 portTexCrosshairLoaded(tex, pool->leftpos, bytesout);   /* crosshair_color, shading kept */
             }
 #endif

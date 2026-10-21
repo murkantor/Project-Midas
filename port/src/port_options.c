@@ -322,7 +322,65 @@ static const struct PortOpt sOpts[] = {
     TOGGLE("stereo_pan",        "[display]", "Stereo Pan\n",    PORTOPT_CAT_AUDIO),
 };
 
-#define PORTOPT_COUNT ((s32)(sizeof(sOpts) / sizeof(sOpts[0])))
+#define PORTOPT_STATIC ((s32)(sizeof(sOpts) / sizeof(sOpts[0])))
+
+/* Mod options (port_mods.c) follow the table as gameplay rows in [input].
+ * Mods register before midas.ini is read and never unregister, so the rows
+ * are built once, on first use after boot. */
+#define PORTOPT_MODS_MAX 32
+#define PORTOPT_MAX (PORTOPT_STATIC + PORTOPT_MODS_MAX)
+#define PORTOPT_COUNT optCount()
+
+#include "port_mods.h"
+
+static struct PortOpt sModOpts[PORTOPT_MODS_MAX];
+static s32 sModOptCount = -1;
+
+static s32 optCount(void)
+{
+    if (sModOptCount != portModsOptionCount())
+    {
+        s32 i;
+
+        sModOptCount = portModsOptionCount();
+        if (sModOptCount > PORTOPT_MODS_MAX)
+        {
+            sModOptCount = PORTOPT_MODS_MAX;
+        }
+        for (i = 0; i < sModOptCount; i++)
+        {
+            struct PortOpt *o = &sModOpts[i];
+            s32 lo, hi, st;
+
+            memset(o, 0, sizeof(*o));
+            o->key = portModsOptionKey(i);
+            o->section = "[input]";
+            o->label = portModsOptionLabel(i);
+            o->category = PORTOPT_CAT_GAMEPLAY;
+            o->suffix = "";
+            if (portModsOptionIsInt(i, &lo, &hi, &st))
+            {
+                o->kind = KIND_INT;
+                o->min = lo;
+                o->max = hi;
+                o->step = st;
+            }
+            else
+            {
+                o->kind = KIND_TOGGLE;
+                o->max = 1;
+                o->step = 1;
+            }
+        }
+    }
+    return PORTOPT_STATIC + sModOptCount;
+}
+
+static const struct PortOpt *optRow(s32 i)
+{
+    return (i < PORTOPT_STATIC) ? &sOpts[i] : &sModOpts[i - PORTOPT_STATIC];
+}
+#define OPTROW(i) (*optRow(i))
 
 /* every section named in the table, in save order */
 static const char *const sSections[] = { "[display]", "[input]" };
@@ -432,7 +490,7 @@ s32 portOptCategoryCount(void)
 /** Which category a row is in (the console groups its listing by it). */
 s32 portOptCategoryOf(s32 i)
 {
-    return (i < 0 || i >= PORTOPT_COUNT) ? -1 : sOpts[i].category;
+    return (i < 0 || i >= PORTOPT_COUNT) ? -1 : OPTROW(i).category;
 }
 
 const char *portOptCategoryLabel(s32 cat)
@@ -450,7 +508,7 @@ const char *portOptLabel(s32 i)
     {
         return "?\n";
     }
-    return sOpts[i].label;
+    return OPTROW(i).label;
 }
 
 /** 1 when the owning side answers for this key (a renderer is linked). */
@@ -462,13 +520,13 @@ s32 portOptAvailable(s32 i)
     {
         return 0;
     }
-    return optGet(sOpts[i].key, &v);
+    return optGet(OPTROW(i).key, &v);
 }
 
 /** 1 = a plain on/off row, so a screen can colour it by its state. */
 s32 portOptIsToggle(s32 i)
 {
-    return (i >= 0 && i < PORTOPT_COUNT) && (sOpts[i].kind == KIND_TOGGLE);
+    return (i >= 0 && i < PORTOPT_COUNT) && (OPTROW(i).kind == KIND_TOGGLE);
 }
 
 s32 portOptGet(s32 i)
@@ -479,7 +537,7 @@ s32 portOptGet(s32 i)
     {
         return 0;
     }
-    if (!optGet(sOpts[i].key, &v))
+    if (!optGet(OPTROW(i).key, &v))
     {
         return 0;
     }
@@ -497,7 +555,7 @@ const char *portOptValueText(s32 i)
     {
         return "?\n";
     }
-    o = &sOpts[i];
+    o = &OPTROW(i);
     if (!optGet(o->key, &v))
     {
         return "N/A\n";
@@ -549,7 +607,7 @@ void portOptStep(s32 i, s32 dir)
     {
         return;
     }
-    o = &sOpts[i];
+    o = &OPTROW(i);
     if (!optGet(o->key, &v))
     {
         return;
@@ -648,9 +706,9 @@ static s32 sSaveHold;
  */
 void portOptSave(void)
 {
-    static char bufs[PORTOPT_COUNT][24];
-    const char *keys[PORTOPT_COUNT];
-    const char *vals[PORTOPT_COUNT];
+    static char bufs[PORTOPT_MAX][24];
+    const char *keys[PORTOPT_MAX];
+    const char *vals[PORTOPT_MAX];
     s32 sec, i, n;
 
     if (sSaveHold)
@@ -663,9 +721,9 @@ void portOptSave(void)
         n = 0;
         for (i = 0; i < PORTOPT_COUNT; i++)
         {
-            if (strcmp(sOpts[i].section, sSections[sec]) == 0 && optIniText(&sOpts[i], bufs[n], sizeof(bufs[n])))
+            if (strcmp(OPTROW(i).section, sSections[sec]) == 0 && optIniText(&OPTROW(i), bufs[n], sizeof(bufs[n])))
             {
-                keys[n] = sOpts[i].key;
+                keys[n] = OPTROW(i).key;
                 vals[n] = bufs[n];
                 n++;
             }
@@ -736,7 +794,7 @@ s32 portOptFind(const char *key)
     }
     for (i = 0; i < PORTOPT_COUNT; i++)
     {
-        if (optStrEqI(sOpts[i].key, key))
+        if (optStrEqI(OPTROW(i).key, key))
         {
             return i;
         }
@@ -746,12 +804,12 @@ s32 portOptFind(const char *key)
 
 const char *portOptKey(s32 i)
 {
-    return (i < 0 || i >= PORTOPT_COUNT) ? NULL : sOpts[i].key;
+    return (i < 0 || i >= PORTOPT_COUNT) ? NULL : OPTROW(i).key;
 }
 
 const char *portOptSection(s32 i)
 {
-    return (i < 0 || i >= PORTOPT_COUNT) ? "" : sOpts[i].section;
+    return (i < 0 || i >= PORTOPT_COUNT) ? "" : OPTROW(i).section;
 }
 
 /**
@@ -767,17 +825,17 @@ s32 portOptValueIni(s32 i, char *buf, s32 n)
     {
         return 0;
     }
-    if (sOpts[i].kind == KIND_PCT)
+    if (OPTROW(i).kind == KIND_PCT)
     {
-        if (!optGet(sOpts[i].key, &v))
+        if (!optGet(OPTROW(i).key, &v))
         {
             return 0;
         }
         /* same rounding as portOptValueText / portOptStep */
-        snprintf(buf, n, "%d%%", (v * 100 + sOpts[i].base / 2) / sOpts[i].base);
+        snprintf(buf, n, "%d%%", (v * 100 + OPTROW(i).base / 2) / OPTROW(i).base);
         return 1;
     }
-    return optIniText(&sOpts[i], buf, n);
+    return optIniText(&OPTROW(i), buf, n);
 }
 
 /** What the row accepts, for an error message ("one of: ..." / "40..120"). */
@@ -791,7 +849,7 @@ s32 portOptRangeText(s32 i, char *buf, s32 n)
         return 0;
     }
     buf[0] = '\0';
-    o = &sOpts[i];
+    o = &OPTROW(i);
     switch (o->kind)
     {
     case KIND_TOGGLE:
@@ -900,7 +958,7 @@ s32 portOptSetIni(s32 i, const char *text)
     {
         return 0;
     }
-    o = &sOpts[i];
+    o = &OPTROW(i);
 
     switch (o->kind)
     {
@@ -1053,7 +1111,7 @@ static s32 kindIsRanged(s32 kind)
  */
 s32 portOptIsRanged(s32 i)
 {
-    return (i >= 0 && i < PORTOPT_COUNT) ? kindIsRanged(sOpts[i].kind) : 0;
+    return (i >= 0 && i < PORTOPT_COUNT) ? kindIsRanged(OPTROW(i).kind) : 0;
 }
 
 /**
@@ -1097,11 +1155,11 @@ s32 portOptValueCount(s32 i)
     {
         return 0;
     }
-    switch (sOpts[i].kind)
+    switch (OPTROW(i).kind)
     {
     case KIND_TOGGLE: return 2;
-    case KIND_ENUM:   return sOpts[i].min; /* ENUM keeps its count in min */
-    default:          return rangeCount(&sOpts[i]);
+    case KIND_ENUM:   return OPTROW(i).min; /* ENUM keeps its count in min */
+    default:          return rangeCount(&OPTROW(i));
     }
 }
 
@@ -1111,24 +1169,24 @@ const char *portOptValueTextAt(s32 i, s32 idx)
     {
         return "?\n";
     }
-    if (sOpts[i].kind == KIND_TOGGLE)
+    if (OPTROW(i).kind == KIND_TOGGLE)
     {
-        if (sOpts[i].valueText != NULL)
+        if (OPTROW(i).valueText != NULL)
         {
-            return sOpts[i].valueText[idx ? 1 : 0];
+            return OPTROW(i).valueText[idx ? 1 : 0];
         }
         return idx ? "ON\n" : "OFF\n";
     }
-    if (sOpts[i].kind == KIND_ENUM && idx < sOpts[i].min)
+    if (OPTROW(i).kind == KIND_ENUM && idx < OPTROW(i).min)
     {
-        return sOpts[i].valueText[idx];
+        return OPTROW(i).valueText[idx];
     }
-    if (kindIsRanged(sOpts[i].kind) && idx < rangeCount(&sOpts[i]))
+    if (kindIsRanged(OPTROW(i).kind) && idx < rangeCount(&OPTROW(i)))
     {
         /* the SAME formatter portOptValueText uses for the live value, so a
          * list entry and the row itself can never disagree about what 90
          * looks like - and KIND_TENTHS still reads "1.5", not "15". */
-        return rangeText(&sOpts[i], rangeValueAt(&sOpts[i], idx));
+        return rangeText(&OPTROW(i), rangeValueAt(&OPTROW(i), idx));
     }
     return "?\n";
 }
@@ -1138,21 +1196,21 @@ s32 portOptValueIndex(s32 i)
 {
     s32 v;
 
-    if (i < 0 || i >= PORTOPT_COUNT || !optGet(sOpts[i].key, &v))
+    if (i < 0 || i >= PORTOPT_COUNT || !optGet(OPTROW(i).key, &v))
     {
         return -1;
     }
-    if (sOpts[i].kind == KIND_TOGGLE)
+    if (OPTROW(i).kind == KIND_TOGGLE)
     {
         return v ? 1 : 0;
     }
-    if (sOpts[i].kind == KIND_ENUM)
+    if (OPTROW(i).kind == KIND_ENUM)
     {
-        return enumIndex(&sOpts[i], v);
+        return enumIndex(&OPTROW(i), v);
     }
-    if (kindIsRanged(sOpts[i].kind))
+    if (kindIsRanged(OPTROW(i).kind))
     {
-        const struct PortOpt *o = &sOpts[i];
+        const struct PortOpt *o = &OPTROW(i);
         s32 idx;
 
         if (o->kind == KIND_PCT)
@@ -1195,16 +1253,16 @@ s32 portOptValueIndexNear(s32 i, s32 dir)
     s32 v, n, idx, off;
 
     idx = portOptValueIndex(i);
-    if (idx < 0 && i >= 0 && i < PORTOPT_COUNT && sOpts[i].kind == KIND_ENUM && optGet(sOpts[i].key, &v))
+    if (idx < 0 && i >= 0 && i < PORTOPT_COUNT && OPTROW(i).kind == KIND_ENUM && optGet(OPTROW(i).key, &v))
     {
-        return enumIndexNear(&sOpts[i], v, dir);   /* e.g. 165 opens on 180, steps to 144 / 180 */
+        return enumIndexNear(&OPTROW(i), v, dir);   /* e.g. 165 opens on 180, steps to 144 / 180 */
     }
-    if (idx >= 0 || i < 0 || i >= PORTOPT_COUNT || !kindIsRanged(sOpts[i].kind)
-        || !optGet(sOpts[i].key, &v))
+    if (idx >= 0 || i < 0 || i >= PORTOPT_COUNT || !kindIsRanged(OPTROW(i).kind)
+        || !optGet(OPTROW(i).key, &v))
     {
         return idx;
     }
-    o = &sOpts[i];
+    o = &OPTROW(i);
     n = rangeCount(o);
     if (n <= 0)
     {
@@ -1239,17 +1297,17 @@ s32 portOptIndexOfValue(s32 i, s32 v)
     {
         return -1;
     }
-    if (sOpts[i].kind == KIND_TOGGLE)
+    if (OPTROW(i).kind == KIND_TOGGLE)
     {
         return v ? 1 : 0;
     }
-    if (sOpts[i].kind == KIND_ENUM)
+    if (OPTROW(i).kind == KIND_ENUM)
     {
-        return enumIndex(&sOpts[i], v);
+        return enumIndex(&OPTROW(i), v);
     }
-    if (kindIsRanged(sOpts[i].kind))
+    if (kindIsRanged(OPTROW(i).kind))
     {
-        const struct PortOpt *o = &sOpts[i];
+        const struct PortOpt *o = &OPTROW(i);
         s32 idx;
 
         if (o->kind == KIND_PCT)
@@ -1275,19 +1333,19 @@ s32 portOptSetIndex(s32 i, s32 idx)
     {
         return 0;
     }
-    if (kindIsRanged(sOpts[i].kind))
+    if (kindIsRanged(OPTROW(i).kind))
     {
-        v = rangeValueAt(&sOpts[i], idx);
-        if (sOpts[i].kind == KIND_PCT)
+        v = rangeValueAt(&OPTROW(i), idx);
+        if (OPTROW(i).kind == KIND_PCT)
         {
-            v = v * sOpts[i].base / 100;   /* back to the owning side's units */
+            v = v * OPTROW(i).base / 100;   /* back to the owning side's units */
         }
     }
     else
     {
-        v = (sOpts[i].kind == KIND_TOGGLE) ? (idx != 0) : sOpts[i].values[idx];
+        v = (OPTROW(i).kind == KIND_TOGGLE) ? (idx != 0) : OPTROW(i).values[idx];
     }
-    if (!optSet(sOpts[i].key, v))
+    if (!optSet(OPTROW(i).key, v))
     {
         return 0;
     }
@@ -1298,7 +1356,7 @@ s32 portOptSetIndex(s32 i, s32 idx)
 /** Set by raw value - the preset applier; no list membership required. */
 s32 portOptSetValue(s32 i, s32 v)
 {
-    if (i < 0 || i >= PORTOPT_COUNT || !optSet(sOpts[i].key, v))
+    if (i < 0 || i >= PORTOPT_COUNT || !optSet(OPTROW(i).key, v))
     {
         return 0;
     }
@@ -1311,8 +1369,8 @@ s32 portOptSetValue(s32 i, s32 v)
  * Every row's code default, captured by video.c just before midas.ini is
  * read (portOptCaptureDefaults), so Reset All needs no second copy of the
  * defaults to keep in step. Binds are not in this table and are never reset. */
-static s32 sOptDefault[PORTOPT_COUNT];
-static u8 sOptDefaultHave[PORTOPT_COUNT];
+static s32 sOptDefault[PORTOPT_MAX];
+static u8 sOptDefaultHave[PORTOPT_MAX];
 
 void portOptCaptureDefaults(void)
 {
@@ -1320,7 +1378,7 @@ void portOptCaptureDefaults(void)
 
     for (i = 0; i < PORTOPT_COUNT; i++)
     {
-        sOptDefaultHave[i] = (u8) optGet(sOpts[i].key, &sOptDefault[i]);
+        sOptDefaultHave[i] = (u8) optGet(OPTROW(i).key, &sOptDefault[i]);
     }
 }
 
@@ -1334,13 +1392,13 @@ void portOptResetDefaults(void)
      * values can't come back over the defaults set below. */
     if (classic >= 0 && sOptDefaultHave[classic])
     {
-        optSet(sOpts[classic].key, sOptDefault[classic]);
+        optSet(OPTROW(classic).key, sOptDefault[classic]);
     }
     for (i = 0; i < PORTOPT_COUNT; i++)
     {
         if (i != classic && sOptDefaultHave[i])
         {
-            optSet(sOpts[i].key, sOptDefault[i]);
+            optSet(OPTROW(i).key, sOptDefault[i]);
         }
     }
     portOptSave();
@@ -1353,7 +1411,7 @@ s32 portOptSetValueQuiet(s32 i, s32 v)
     {
         return 0;
     }
-    return optSet(sOpts[i].key, v);
+    return optSet(OPTROW(i).key, v);
 }
 
 /* ---- classic mode --------------------------------------------------------

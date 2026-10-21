@@ -418,6 +418,12 @@ u8 * langGet(s32 slotID)
     u32 output_slot;
 
 #ifndef TARGET_N64
+    if (bank_id == 45)
+    {   /* mod strings (port_mods.c host->string) */
+        extern const char *portModsString(s32 slot);
+
+        return (u8 *) portModsString(slotID & 0x03FF);
+    }
     if (bank_id >= 45)
     {
         return (u8 *)"Error: Bank index out of range";
