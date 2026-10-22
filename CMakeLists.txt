@@ -469,3 +469,42 @@ if(GE_VIDEO)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${CMAKE_SOURCE_DIR}/tools/shaders_base.txt $<TARGET_FILE_DIR:ge>/Data/shaders_base.txt)
 endif()
+
+# ---- ROM-free unit tests ---------------------------------------------------
+# port/tests/ holds tests for logic that has been split out of the SDL/ROM
+# layers precisely so it can be exercised without either. They build in a
+# fraction of a second and need no cart, display or sound device, so they are
+# safe for CI and useful in a tight edit/test loop.
+#
+#     cmake -B build -DGE_PORT_TESTS=ON
+#     cmake --build build --target port_tests
+#     ctest --test-dir build -R audio_pace
+option(GE_PORT_TESTS "Build the ROM-free port unit tests" OFF)
+if(GE_PORT_TESTS)
+    enable_testing()
+
+    # Render pacing policy (port/src/audio_pace.c): the synthesizer must keep
+    # running with no audio device, and a live device must keep setting the
+    # pace so the output backlog cannot drift upward into audible latency.
+    #
+    # Compiled with explicit flags rather than add_executable(), because the
+    # directory-wide add_compile_options() at the top of this file carries
+    # -m32/-msse2 for the x86-32 game build. This unit is plain C99 with no
+    # architecture requirements, so it should build and run on any host that
+    # can run the tests at all - including a 64-bit or ARM dev machine that
+    # cannot link the game itself.
+    set(AUDIO_PACE_TEST_BIN ${CMAKE_BINARY_DIR}/audio_pace_test)
+    add_custom_command(
+        OUTPUT ${AUDIO_PACE_TEST_BIN}
+        COMMAND ${CMAKE_C_COMPILER} -std=c99 -Wall -Wextra
+                -I${CMAKE_SOURCE_DIR}/port/include
+                ${CMAKE_SOURCE_DIR}/port/tests/audio_pace.c
+                ${CMAKE_SOURCE_DIR}/port/src/audio_pace.c
+                -o ${AUDIO_PACE_TEST_BIN}
+        DEPENDS ${CMAKE_SOURCE_DIR}/port/tests/audio_pace.c
+                ${CMAKE_SOURCE_DIR}/port/src/audio_pace.c
+                ${CMAKE_SOURCE_DIR}/port/include/audio_pace.h
+        COMMENT "Building audio_pace_test")
+    add_custom_target(port_tests ALL DEPENDS ${AUDIO_PACE_TEST_BIN})
+    add_test(NAME audio_pace COMMAND ${AUDIO_PACE_TEST_BIN})
+endif()

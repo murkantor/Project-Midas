@@ -14,11 +14,41 @@
  *
  *   2. portAudioPump(): the frame driver replacing the N64 audio thread
  *      (amMain is never scheduled by pcsched). Called once per video
- *      frame from the main loop, it keeps ~4 frames of samples queued:
- *      alAudioFrame() -> portAcmdRun() -> SDL_QueueAudio().
+ *      frame from the main loop, it renders samples on a WALL-CLOCK
+ *      schedule at PORT_AUDIO_RATE - alAudioFrame() -> portAcmdRun() ->
+ *      SDL_QueueAudio() - and lets the device decide only how much of
+ *      that is buffered, never whether the renderer runs at all.
  *
  *   3. portAudioInit(): SDL audio device setup, invoked lazily by the
  *      first pump after amCreateAudioManager has run alInit/alSynNew.
+ *      A failure is logged and retried, never fatal: the game's audio
+ *      clock (item 2) has to keep running with no device attached.
+ *
+ * Why the render pace is the playback queue when a device exists, and wall
+ * time when it does not: the synthesizer's clock IS the game's audio clock.
+ * alAudioFrame is the only thing that ever calls the AL client handlers, so
+ * the SFX player's event queue, the sound-state list and all three music
+ * sequencers are advanced exactly when it runs (synthesizer.c:189). Gating the
+ * pump on the device - "no device, don't run" or "queue full, don't run" -
+ * freezes game audio state and the SFX event queue fills until it drops
+ * thousands of events. The silent-system reports look exactly like that: a
+ * queue pinned at capacity, nothing voiced, and a heartbeat still alive.
+ *
+ * So neither source of pacing is allowed to STOP the renderer. Which one
+ * DRIVES it is a latency question:
+ *   - a live device is the authority, because it consumes at the true DAC rate
+ *     and pacing to its queue keeps the backlog (and therefore the delay
+ *     between an event and the sample reaching a speaker) at that queue's
+ *     depth. Pacing to the wall clock instead would let the backlog drift up
+ *     to PORT_AUDIO_QUEUE_MAX on any device slightly slower than real time;
+ *   - with no device, or one that stopped draining, the wall clock drives so
+ *     game audio time still advances and the output is simply discarded.
+ *
+ * Output latency is then the sum of three buffers, and all three are sized
+ * deliberately small here: the queue floor below (top-up watermark), one
+ * render quantum, and the SDL device period. At 22050 Hz stereo that is
+ * ~35-52 ms, against ~63-103 ms with the original 4 KB watermark and one
+ * full 736-sample field per render.
  *
  * Honest limits (bring-up quality, refine later):
  *   - A_RESAMPLE is linear interpolation (RSP uses a windowed table);
@@ -41,12 +71,29 @@
 #include <ultra64.h>
 #include <PR/libaudio.h>
 #include <PR/abi.h>
+#include "audio_pace.h"
+
+/* printf is declared by hand rather than pulling <stdio.h>: PR/os.h declares
+ * sprintf itself, which collides with the hosted header's fortified macros on
+ * macOS, and this TU includes ultra64.h before any libc header. Same reason
+ * src/snd.c and port/src/printf_port.c declare it locally. */
+extern int printf(const char *, ...);
 
 /* ---- config ------------------------------------------------------------ */
 
 #define PORT_AUDIO_RATE      22050  /* both GE banks; alSynConfig outputRate */
-#define PORT_AUDIO_QUEUE_LOW (4 * 1024)  /* bytes queued before we top up   */
-#define PORT_AUDIO_QUEUE_MAX (16 * 1024)
+/* With no device present nothing is heard, so it costs nothing to stop
+ * handing it samples. Kept low so the fallback rate matches the DAC's. */
+/* One render quantum is HALF a video field (g_FrameSize / 2): 368 samples at
+ * 22050 Hz = 16.7 ms instead of 33.4 ms. A sound triggered between pumps waits
+ * up to one quantum for its first sample to be rendered, so halving it halves
+ * that term. Two quanta per pump at 147 Hz still cover the 2944 samples a field
+ * needs, so throughput is unchanged - only the granularity is finer. */
+#define PORT_AUDIO_FRAME_DIV 2
+#define PORT_AUDIO_RETRY_MS  2000   /* open-failure retry cadence (ms)       */
+/* A process that stalled (debugger, long load) must not replay minutes of
+ * audio back-to-back when it resumes; catch-up is bounded per pump. */
+#define PORT_AUDIO_MAX_CATCHUP_MS 100
 #define PORT_MAX_FRAME_SAMPLES 1024
 
 extern void ge_dbg_vec(const char *tag, const f32 *v, s32 n);
@@ -55,8 +102,10 @@ extern void ge_dbg_vec(const char *tag, const f32 *v, s32 n);
 extern u32 g_FrameSize;
 
 static SDL_AudioDeviceID s_AudioDev;
-static s32 s_AudioDead; /* init failed - stay silent, don't retry every frame */
-static s32 s_ForceOneFrame; /* portAudioPumpForce: bypass the queue-low gate */
+static u32 s_AudioFailCount; /* consecutive failed opens, for the log rate limit */
+static u32 s_AudioStallReopens; /* stall-triggered reopens, for the log rate limit */
+static u32 s_DevRetryAtMs;   /* SDL_GetTicks() of the next open attempt        */
+static s32 s_ForceOneFrame;  /* portAudioPumpForce: render exactly one frame   */
 
 /* ---- aspMain interpreter ------------------------------------------------ */
 
@@ -632,39 +681,85 @@ void portAcmdRun(Acmd *list, s32 count)
 
 /* ---- SDL device + frame pump ------------------------------------------- */
 
-static void portAudioInit(void)
+/**
+ * Report a failed open. Rate-limited so a machine that will never have audio
+ * cannot bury the rest of the log, but the first failure has to say WHY: the
+ * previous version returned in total silence, and on Windows the game opens
+ * no console, so a mute system produced a log that looked completely healthy.
+ */
+static void portAudioReportFail(const char *what)
+{
+    const char *drv = SDL_GetCurrentAudioDriver();
+
+    s_AudioFailCount++;
+    if (s_AudioFailCount == 1 || (s_AudioFailCount % 30) == 0) {
+        printf("ge: audio: %s failed (SDL: %s; driver %s) - no output, attempt %u, "
+               "retrying every %d ms\n",
+               what, SDL_GetError(), drv != NULL ? drv : "none",
+               (unsigned) s_AudioFailCount, PORT_AUDIO_RETRY_MS);
+    }
+}
+
+/**
+ * Open the SDL audio device. Returns 1 on success, 0 on failure (the caller
+ * retries). The exact 22050 Hz s16 stereo request with no allowed changes is
+ * what the synthesizer's fixed frame size requires (audi.c derives
+ * g_FrameSize from outputRate), so a refusal is reported rather than
+ * silently accepted at a rate the mixer was never sized for.
+ */
+static s32 portAudioInit(void)
 {
     SDL_AudioSpec want;
     SDL_AudioSpec have;
 
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
-        s_AudioDead = 1;
-        return;
+        portAudioReportFail("SDL_InitSubSystem(SDL_INIT_AUDIO)");
+        return 0;
     }
 
     memset(&want, 0, sizeof(want));
     want.freq = PORT_AUDIO_RATE;
     want.format = AUDIO_S16SYS;
     want.channels = 2;
-    want.samples = 512;
+    want.samples = PORT_AUDIO_DEV_SAMPLES;
 
     s_AudioDev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
     if (s_AudioDev == 0) {
-        s_AudioDead = 1;
-        return;
+        portAudioReportFail("SDL_OpenAudioDevice(22050 Hz, s16, stereo)");
+        return 0;
     }
     SDL_PauseAudioDevice(s_AudioDev, 0);
+    s_AudioFailCount = 0;
 
     {
-        f32 v = (f32)have.freq;
-        ge_dbg_vec("audio: SDL device open, rate", &v, 1);
+        const char *drv = SDL_GetCurrentAudioDriver();
+
+        printf("ge: audio: device open - driver %s, %d Hz, %d ch, %d samples, "
+               "%d byte buffer\n",
+               drv != NULL ? drv : "none", (s32) have.freq, (s32) have.channels,
+               (s32) have.samples, (s32) have.size);
     }
+    return 1;
 }
 
+/* ---- render pacing policy ---------------------------------------------- */
+/*
+ * portAudioDrainTick / portAudioShouldRender / portAudioQuantum live in
+ * port/src/audio_pace.c, with their constants and rationale in
+ * port/include/audio_pace.h. They are pure (no SDL, no globals, no clock) so
+ * port/tests/audio_pace.c can drive the shipped policy directly under
+ * GE_PORT_TESTS instead of testing a reimplementation of it.
+ */
+
 /**
- * Called once per video frame from the main loop (pcsched). Replaces the
- * N64 audio thread: builds and executes as many audio frames as needed to
- * keep the SDL queue ahead of the DAC.
+ * Called once per video frame from the main loop (pcsched). Replaces the N64
+ * audio thread.
+ *
+ * Pacing is decided by portAudioShouldRender() above; this function only
+ * gathers the observations and acts on the verdict. alAudioFrame is the only
+ * thing that advances the SFX player, the sound-state list and the three music
+ * sequencers (synthesizer.c:189), so it must run on schedule whether or not a
+ * device is there to hear it.
  */
 void portAudioPump(void)
 {
@@ -676,11 +771,19 @@ void portAudioPump(void)
     static Acmd cmdList[3072 * 4];
     static s16 frameBuf[PORT_MAX_FRAME_SAMPLES * 2];
     static s32 s_InPump;
+    /* Audio owed to the wall clock, in samples x1000, so a 147 Hz pump's
+     * fractional share of a frame cannot round to zero and stop the render.
+     * Only meaningful when the clock is the pacing authority (no device, or a
+     * stalled one); it is held at zero while a live device drives. */
+    static u64 s_ClockOwed;
+    static u32 s_ClockLastMs;
+    static s32 s_ClockPrimed;
+    static PortAudioDrain s_Drain;
+    s32 devLive = 0;    /* device exists and its queue is draining */
+    s32 devStalled = 0; /* device exists but its queue is stuck */
+    u32 samples = portAudioQuantum(g_FrameSize, PORT_MAX_FRAME_SAMPLES, PORT_AUDIO_FRAME_DIV);
+    u64 frame = (u64) samples * 1000;
     s32 guard;
-
-    if (s_AudioDead) {
-        return;
-    }
 
     /* REENTRANCY GUARD: portPumpEvents fires from inside blocking
      * osRecvMesg, and the AL client handlers (sndp, the CSP sequencers)
@@ -696,24 +799,90 @@ void portAudioPump(void)
         s_InPump = 0;
         return; /* synthesizer not up yet (or no clients registered) */
     }
-    if (s_AudioDev == 0) {
-        portAudioInit();
-        if (s_AudioDead) {
-            s_InPump = 0;
-            return;
+
+    /* Device setup is a side quest: try, record the failure, try again later.
+     * The sink can appear or move under us at any point - a headset plugged
+     * in, PipeWire restarted, a 32-bit client stack that was not up at boot. */
+    if (s_AudioDev == 0 && (s32) (SDL_GetTicks() - s_DevRetryAtMs) >= 0) {
+        if (!portAudioInit()) {
+            s_DevRetryAtMs = SDL_GetTicks() + PORT_AUDIO_RETRY_MS;
+        }
+    }
+
+    /* Is the device consuming? A sink that opened and then went quiet holds a
+     * queue that never drains, so it is no longer a valid pacing authority.
+     * portAudioDrainTick() measures real consumption (bytes in at the end of
+     * the last pump, minus bytes out now) rather than "the number changed",
+     * because at 147 Hz the pump runs far more often than an SDL period and a
+     * healthy queue legitimately sits still for a pump or two between drains. */
+    if (s_AudioDev != 0) {
+        u32 queued = SDL_GetQueuedAudioSize(s_AudioDev);
+
+        devLive = portAudioDrainTick(&s_Drain, queued);
+        if (!devLive) {
+            devStalled = 1;
+            if (s_Drain.famished >= PORT_AUDIO_STALL_PUMPS) {
+                /* Same rate limit as a failed open: a sink that opens and
+                 * never consumes would otherwise log once a second. */
+                s_AudioStallReopens++;
+                if (s_AudioStallReopens == 1 || (s_AudioStallReopens % 30) == 0) {
+                    printf("ge: audio: device stalled (%u bytes queued, no drain for %u pumps) - "
+                           "reopening (stall #%u)\n",
+                           (unsigned) queued, (unsigned) s_Drain.famished,
+                           (unsigned) s_AudioStallReopens);
+                }
+                SDL_CloseAudioDevice(s_AudioDev);
+                s_AudioDev = 0;
+                s_AudioFailCount = 0;
+                s_DevRetryAtMs = 0;
+                s_Drain.at_exit = 0;
+                s_Drain.famished = 0;
+                devLive = 0;
+                devStalled = 0;
+            }
+        }
+    }
+
+    /* Advance the wall clock. Still tracked while a device is live - the
+     * elapsed time is real either way - but the owed backlog is only carried
+     * when the clock is actually pacing, so handing over from a live device to
+     * the fallback starts from zero instead of dumping a stale backlog. */
+    {
+        u32 now = SDL_GetTicks();
+        u32 elapsed;
+
+        if (!s_ClockPrimed) {
+            s_ClockPrimed = 1;
+            s_ClockLastMs = now;
+            elapsed = 0;
+        } else {
+            elapsed = now - s_ClockLastMs; /* u32 delta: exact across the wrap */
+            s_ClockLastMs = now;
+        }
+        if (elapsed > PORT_AUDIO_MAX_CATCHUP_MS) {
+            elapsed = PORT_AUDIO_MAX_CATCHUP_MS;
+        }
+        if (devLive) {
+            s_ClockOwed = 0; /* the device is the authority */
+        } else {
+            s_ClockOwed += (u64) elapsed * PORT_AUDIO_RATE;
         }
     }
 
     for (guard = 0; guard < 8; guard++) {
+        PortAudioPace pace;
         s32 cmdLen = 0;
-        u32 samples = g_FrameSize != 0 ? g_FrameSize : 368;
+        u32 queued;
 
-        if (!s_ForceOneFrame &&
-            SDL_GetQueuedAudioSize(s_AudioDev) >= PORT_AUDIO_QUEUE_LOW) {
+        /* Gather the observation, ask the policy, obey it. No branch here can
+         * be blocked by the device: at worst it hands pacing to the clock. */
+        queued = (s_AudioDev != 0) ? SDL_GetQueuedAudioSize(s_AudioDev) : 0;
+        pace.dev_live = devLive;
+        pace.queued = queued;
+        pace.owed = s_ClockOwed;
+        pace.frame = frame;
+        if (!s_ForceOneFrame && !portAudioShouldRender(&pace)) {
             break;
-        }
-        if (samples > PORT_MAX_FRAME_SAMPLES) {
-            samples = PORT_MAX_FRAME_SAMPLES;
         }
 
         alAudioFrame(cmdList, &cmdLen, frameBuf, (s32)samples);
@@ -721,6 +890,11 @@ void portAudioPump(void)
             break; /* no clients / nothing to render */
         }
         portAcmdRun(cmdList, cmdLen);
+        if (s_ClockOwed > frame) {
+            s_ClockOwed -= frame;
+        } else {
+            s_ClockOwed = 0;
+        }
 
         { /* bring-up (GE_DUMP_BOND): digital proof of synthesis - report
            * the first frame that contains a nonzero sample */
@@ -743,9 +917,23 @@ void portAudioPump(void)
             }
         }
 
-        if (SDL_GetQueuedAudioSize(s_AudioDev) < PORT_AUDIO_QUEUE_MAX) {
+        /* Only a draining device gets fed. A stalled one is already pinned at
+         * or above the watermark, so queueing would just deepen a backlog
+         * nobody is consuming; it is closed and reopened by the stall path
+         * above within ~1 s. */
+        if (s_AudioDev != 0 && !devStalled && queued < PORT_AUDIO_QUEUE_MAX) {
             SDL_QueueAudio(s_AudioDev, frameBuf, samples * 4);
         }
+
+        if (s_ForceOneFrame) {
+            break; /* portAudioPumpForce renders exactly one frame */
+        }
+    }
+
+    /* Record what was left for the device to chew on, so the next pump can
+     * measure real consumption instead of guessing from a changed byte count. */
+    if (s_AudioDev != 0) {
+        s_Drain.at_exit = SDL_GetQueuedAudioSize(s_AudioDev);
     }
 
     s_InPump = 0;
