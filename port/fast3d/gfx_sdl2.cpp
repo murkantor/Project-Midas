@@ -10,6 +10,9 @@
 #include "gfx_screen_config.h"
 #include "glad/glad.h" /* GE bring-up: glReadPixels for GE_SHOT screenshots */
 #include "icon_rgba.h"  /* the window icon (scripts/port/make_icon.py) */
+#ifdef __ANDROID__
+#include "port_android_audio.h" /* lifecycle: pause/resume the SDL audio device */
+#endif
 
 #ifdef _WIN32
 /* Hybrid-GPU laptops: NVIDIA / AMD drivers read these two exports to run the exe
@@ -29,7 +32,14 @@ static bool vsync_enabled = true;
 // OTRTODO: These are redundant. Info can be queried from SDL.
 static int window_width = DESIRED_SCREEN_WIDTH;
 static int window_height = DESIRED_SCREEN_HEIGHT;
+#ifdef __ANDROID__
+/* Android has no windowed desktop surface: the activity's surface is the
+ * screen, so "fullscreen" is the only mode and SDL_WINDOW_FULLSCREEN is the
+ * closest equivalent. (Exclusive/desktop/borderless distinctions do not exist.) */
+static uint32_t fullscreen_flag = SDL_WINDOW_FULLSCREEN;
+#else
 static uint32_t fullscreen_flag = SDL_WINDOW_FULLSCREEN_DESKTOP;
+#endif
 static bool fullscreen_state;
 static bool maximized_state;
 /* Borderless-window "fullscreen": SDL_WINDOW_FULLSCREEN_DESKTOP makes a topmost
@@ -231,6 +241,16 @@ static void set_borderless_fullscreen(bool on) {
 }
 
 static void set_fullscreen(bool on, bool call_callback) {
+#ifdef __ANDROID__
+    /* Always fullscreen; report the state the game is actually in so the
+     * display option and the ini do not drift. */
+    (void) on;
+    fullscreen_state = true;
+    if (call_callback && on_fullscreen_changed_callback) {
+        on_fullscreen_changed_callback(true);
+    }
+    return;
+#endif
     fullscreen_state = on;
     if (fullscreen_flag == SDL_WINDOW_FULLSCREEN) {
         const bool was_borderless = borderless_state;
@@ -254,6 +274,10 @@ static void set_fullscreen(bool on, bool call_callback) {
 }
 
 static void set_maximize_window(bool on) {
+#ifdef __ANDROID__
+    (void) on; /* no maximized window state on Android */
+    return;
+#endif
 	maximized_state = on;
 	if (on) {
 		SDL_MaximizeWindow(wnd);
@@ -270,7 +294,73 @@ static void gfx_sdl_get_active_window_refresh_rate(uint32_t* refresh_rate) {
     *refresh_rate = mode.refresh_rate;
 }
 
+#ifdef __ANDROID__
+/* Android: one fullscreen surface, created by SDLActivity, with a GLES 3.0
+ * context. None of the desktop window geometry/display-mode logic below
+ * applies (SDL would ignore or reject it), so keep that path untouched for
+ * the platforms it was written for. */
+static void gfx_sdl_init_android(const struct GfxWindowInitSettings *set) {
+    window_width = set->width;
+    window_height = set->height;
+
+    if (SDL_Init(SDL_INIT_VIDEO) != 0) {
+        sysFatalError("Could not init SDL:\n%s", SDL_GetError());
+    }
+
+    SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
+    SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+    if (sysArgCheck("--debug-gl")) {
+        SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
+    }
+
+    /* ES 3.0 is the renderer's baseline: gfx_opengl.cpp emits "#version 300
+     * es" and both the interpreter and retained-geometry shaders are written
+     * for it. Requesting a desktop profile here fails at SDL_GL_CreateContext
+     * on Android. */
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+
+    const Uint32 flags = SDL_WINDOW_OPENGL | SDL_WINDOW_FULLSCREEN | SDL_WINDOW_SHOWN;
+    wnd = SDL_CreateWindow(set->title, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+                           window_width, window_height, flags);
+    if (!wnd) {
+        sysFatalError("Could not open the Android SDL window:\n%s", SDL_GetError());
+    }
+
+    ctx = SDL_GL_CreateContext(wnd);
+    if (!ctx) {
+        sysFatalError("Could not create the GLES 3.0 context:\n%s", SDL_GetError());
+    }
+
+    SDL_GL_MakeCurrent(wnd, ctx);
+    SDL_GL_SetSwapInterval(1);
+    SDL_ShowWindow(wnd);
+
+    fullscreen_state = true;
+    SDL_GetWindowSize(wnd, &window_width, &window_height);
+    /* Keep a sane [display] width/height for the ini even though Android has
+     * no remembered window position. */
+    saved_w = window_width;
+    saved_h = window_height;
+    saved_x = saved_y = 0;
+    saved_valid = (saved_w > 0 && saved_h > 0);
+
+    int dw = 0, dh = 0;
+    SDL_GL_GetDrawableSize(wnd, &dw, &dh);
+    sysLogPrintf(LOG_NOTE, "SDL: Android GLES 3.0 window %dx%d, drawable %dx%d, video driver %s",
+                 window_width, window_height, dw, dh, SDL_GetCurrentVideoDriver());
+
+    qpc_freq = SDL_GetPerformanceFrequency();
+}
+#endif
+
 static void gfx_sdl_init(const struct GfxWindowInitSettings *set) {
+#ifdef __ANDROID__
+    gfx_sdl_init_android(set);
+    return;
+#endif
     window_width = set->width;
     window_height = set->height;
 
@@ -566,6 +656,10 @@ static void gfx_sdl_get_centered_positions(int32_t width, int32_t height, int32_
 }
 
 static void gfx_sdl_set_closest_resolution(int32_t width, int32_t height, bool should_center) {
+#ifdef __ANDROID__
+    (void) width; (void) height; (void) should_center; /* the surface follows the display */
+    return;
+#endif
     const SDL_DisplayMode mode = {.w = width, .h = height};
     const int disp_idx = SDL_GetWindowDisplayIndex(wnd);
     SDL_DisplayMode closest = {};
@@ -584,6 +678,10 @@ static void gfx_sdl_set_closest_resolution(int32_t width, int32_t height, bool s
 }
 
 static void gfx_sdl_set_dimensions(uint32_t width, uint32_t height, int32_t posX, int32_t posY) {
+#ifdef __ANDROID__
+    (void) width; (void) height; (void) posX; (void) posY; /* no window geometry */
+    return;
+#endif
     SDL_SetWindowSize(wnd, width, height);
     SDL_SetWindowPosition(wnd, posX, posY);
     fit_window_to_display();
@@ -634,6 +732,11 @@ static void gfx_sdl_handle_events(void) {
     while (SDL_PollEvent(&event)) {
         SDL_AtomicAdd(&stat_events, 1);
         if (event.type == SDL_MOUSEMOTION) { SDL_AtomicAdd(&stat_mouse_events, 1); }
+#ifdef __ANDROID__
+        /* Android lifecycle/audio-device events: audio_pc.c pauses and
+         * reopens its device here (the input pump keeps polling separately). */
+        portAndroidAudioHandleEvent(&event);
+#endif
         switch (event.type) {
             case SDL_TEXTINPUT:
                 if (portTextInputActive()) {

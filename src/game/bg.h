@@ -251,5 +251,6 @@ f32 bgGetLevelFloorY(void);
 void bgFindRoomsAlongSegment(coord3d *pos1, coord3d *pos2, u8 *initialRooms, u8 *outRoomSet, s32 *outRoomNums, s32 *outRoomNumsCount, s32 outRoomNumsMax);
 s32 sub_GAME_7F0B9E04(coord3d *arg0, coord3d *arg1);
 void bgRoomCalcBB(s32 room);
+void bgGetRoomCenter(s32 roomnum, coord3d *dst);
 
 #endif

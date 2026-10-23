@@ -55,6 +55,9 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
+/* PR/os.h undefines errno for an OS-message member. Capture the host API
+ * before that include instead of assuming glibc's __errno_location ABI. */
+static int portErrnoValue(void) { return errno; }
 #ifdef _WIN32
 #include <direct.h> /* _mkdir */
 #endif
@@ -70,13 +73,7 @@
  * plus a silent copy in the tilde console ring (spec section 7). */
 extern void portConLogf(const char *fmt, ...);
 
-/* include/PR/os.h #undef's errno (an OSMesg field carries that name);
- * this is libc's own expansion, brought back under a port name */
-#ifdef _WIN32
-#define port_errno (*_errno())
-#else
-#define port_errno (*__errno_location())
-#endif
+#define port_errno portErrnoValue()
 
 extern const char *portRootPath(const char *name); /* main.c: <exe dir>/name */
 extern FILE *portRootFopen(const char *name, const char *mode);
@@ -766,12 +763,14 @@ static enum romfileclass romdataClassOf(const char *name)
     {
         size_t l = strlen(name);
         if (l > 2 && name[l - 1] == 'Z' && (name[0] == 'C' || name[0] == 'G' || name[0] == 'P') && strchr(name, '/') == NULL) {
+#ifndef __ANDROID__
             /* the three inline-texture menu models embed segment-5 texture
              * blobs (objecthandler_2.c portSwapInlineTextures) that the model
              * converter does not yet handle - keep them compiled for now */
             if (strcmp(name, "PlegalpageZ") == 0 || strcmp(name, "PnintendologoZ") == 0 || strcmp(name, "PgoldeneyelogoZ") == 0) {
                 return CLASS_NONE;
             }
+#endif
             return CLASS_MODEL; /* C<name>Z chr, G<name>Z gun, P<name>Z prop - converted in load_object_fill_header */
         }
     }

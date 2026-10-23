@@ -297,6 +297,13 @@ void load_object_fill_header(struct ModelFileHeader *objheader, u8 *name, u8* ds
         filedata = _fileNameLoadToBank(name, 0, 0x100, 4);
     }
     
+    if (filedata == NULL)
+    {
+        static const struct ModelNode s_portEmptyModelNode;
+        objheader->RootNode = (struct ModelNode *) &s_portEmptyModelNode;
+        return;
+    }
+
     objheader->Switches = (struct ModelNode **)filedata;
     
     // hmmmmmmmmmmmm

@@ -37,6 +37,7 @@
 #include <ultra64.h>
 #include "libultra/io/controller.h" /* OSPifRam + the __osCont/__osSi internal API */
 #include "port_libultra.h"
+#include "port_atomic_file.h"       /* atomic Data/Saves/eeprom.bin replace */
 
 /* port_console.c: same output as the fprintf(stderr, ...) this replaced,
  * plus a silent copy in the tilde console ring (spec section 7). */
@@ -333,6 +334,11 @@ __attribute__((weak)) s32 portInputOptionSet(const char *key, s32 value)
     (void) key;
     (void) value;
     return 0;
+}
+
+/** video.c: lifecycle settings flush. Headless has no Port Options holds. */
+__attribute__((weak)) void portVideoFlushSettings(void)
+{
 }
 
 extern s32 portConIsOpen(void); /* port_console.c - always linked */
@@ -1502,23 +1508,43 @@ static void eepromLoad(void)
 
 static void eepromFlush(void)
 {
-    extern FILE *portRootFopen(const char *name, const char *mode);
     extern const char *portRootPath(const char *name);
+    PortAtomicFile af;
     FILE *f;
+    int ok;
+    static int warned;
 
     eepromEnsureDir();
-    f = portRootFopen(PORT_EEPROM_FILE, "wb");
-    if (f == NULL) {
-        static int warned;
+    portAtomicFileInit(&af);
+    if (!portAtomicFileOpen(&af, portRootPath(PORT_EEPROM_FILE), 1)) {
         if (!warned) {
             warned = 1;
-            portConLogf("ge: cannot write %s - saves are memory-only\n",
+            portConLogf("ge: cannot write %s (%s, errno %d) - saves are memory-only\n",
+                    portRootPath(PORT_EEPROM_FILE),
+                    portAtomicFileStageName(portAtomicFileStage(&af)), portAtomicFileError(&af));
+        }
+        return;
+    }
+    f = portAtomicFileStream(&af);
+    ok = (fwrite(sEeprom, 1, sizeof(sEeprom), f) == sizeof(sEeprom));
+    if (!ok || ferror(f)) {
+        portAtomicFileAbort(&af);
+        if (!warned) {
+            warned = 1;
+            portConLogf("ge: cannot write %s safely - this save is memory-only\n",
                     portRootPath(PORT_EEPROM_FILE));
         }
         return;
     }
-    fwrite(sEeprom, 1, sizeof(sEeprom), f);
-    fclose(f);
+    if (!portAtomicFileCommit(&af)) {
+        if (!warned) {
+            warned = 1;
+            portConLogf("ge: cannot replace %s (%s, errno %d) - this save is memory-only\n",
+                    portRootPath(PORT_EEPROM_FILE),
+                    portAtomicFileStageName(portAtomicFileStage(&af)), portAtomicFileError(&af));
+        }
+        return;
+    }
 }
 
 s32 osEepromProbe(OSMesgQueue *mq)

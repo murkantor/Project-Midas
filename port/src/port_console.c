@@ -15,6 +15,9 @@
  */
 #ifndef TARGET_N64
 
+#ifdef __ANDROID__
+#include <android/log.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdarg.h>
@@ -322,6 +325,9 @@ void portConLogf(const char *fmt, ...)
     tmp[sizeof(tmp) - 1] = '\0';
 
     fputs(tmp, stderr);
+#ifdef __ANDROID__
+    __android_log_write(ANDROID_LOG_INFO, "MidasNative", tmp);
+#endif
     portConPrint(0, tmp);
 }
 

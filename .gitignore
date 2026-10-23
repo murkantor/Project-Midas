@@ -277,3 +277,20 @@ docs/devnotes/
 
 # the docs live in the private repo
 /docs/
+
+# Android local SDK paths, generated packages and local architecture index
+/android/local.properties
+/android/.gradle/
+/android/.kotlin/
+/android/**/build/
+/android/**/.cxx/
+*.apk
+*.idsig
+/graphify-out/
+/port/src/graphify-out/
+/build_audit_arm64/
+/build_android/
+/build_android32/
+/build_headless_android_regression/
+*.v64
+*.V64

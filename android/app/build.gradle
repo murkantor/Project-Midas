@@ -1,0 +1,151 @@
+plugins {
+    id "com.android.application"
+}
+
+def repoRoot = rootProject.projectDir.parentFile
+def stagedGameData = file("$buildDir/generated/gameDataAssets")
+def stagedSupportManifest = file("$buildDir/generated/supportManifest")
+
+// Default is the real port target (arm64-v8a). An earlier 32-bit device can be
+// tested with -PmidasAbis=armeabi-v7a without changing the default. The ABI is
+// still passed to CMake by AGP, not by a second hand-written flag.
+def supportedAbis = ["arm64-v8a", "armeabi-v7a"]
+def requestedAbis = (findProperty("midasAbis") ?: "arm64-v8a").toString()
+        .split(",")
+        .collect { it.trim() }
+        .findAll { !it.isEmpty() }
+if (requestedAbis.isEmpty()) {
+    throw new GradleException("midasAbis must name at least one ABI")
+}
+requestedAbis.each { abi ->
+    if (!(abi in supportedAbis)) {
+        throw new GradleException("Unsupported midasAbis value '" + abi + "'; use " + supportedAbis.join(","))
+    }
+}
+
+android {
+    namespace "org.midas.android"
+    compileSdk 34
+    ndkVersion "26.2.11394342"
+
+    defaultConfig {
+        applicationId "org.midas.android"
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.1-android"
+
+        // SDL2 and the game are both built for the selected ABI(s) by the root
+        // CMake project. Default remains arm64-v8a.
+        ndk {
+            abiFilters(*requestedAbis)
+        }
+
+        externalNativeBuild {
+            cmake {
+                arguments "-DGE_VIDEO=ON"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            // The native build is shared with the desktop port. The build
+            // worker owns this file and the cmake/ directory.
+            path file("../../CMakeLists.txt")
+            version "3.22.1"
+        }
+    }
+
+    sourceSets {
+        main {
+            // SDL2 is an external checkout (third_party/SDL2 by default), not
+            // vendored here. Its Java half must be part of this app.
+            java.srcDirs += file("../../third_party/SDL2/android-project/app/src/main/java")
+            assets.srcDirs += [stagedGameData, stagedSupportManifest]
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+        }
+    }
+
+    packaging {
+        jniLibs.useLegacyPackaging = true
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
+    }
+
+    lint {
+        abortOnError true
+        // SDL2's Java sources are an external checkout. SDL guards these
+        // Bluetooth/audio/vibrate calls at runtime; the app itself requests no
+        // runtime permissions (and never storage access).
+        disable "MissingPermission", "UnspecifiedRegisterReceiverFlag"
+    }
+}
+
+dependencies {
+    testImplementation "junit:junit:4.13.2"
+}
+
+// Stage only the runtime text tables and notices the native port reads beside
+// its data root. The tools/ directory itself, ROM data, saves and midas.ini are
+// never packaged.
+tasks.register("stageGameDataAssets", Sync) {
+    from(repoRoot) {
+        include "LICENSE"
+        include "tools/gamecontrollerdb.txt"
+        include "tools/gamecontrollerdefault.txt"
+        include "tools/midas_ini_help.txt"
+        include "tools/shaders_base.txt"
+        include "tools/Data_README.txt"
+        include "tools/Mods_README.txt"
+        include "tools/THIRD_PARTY_NOTICES.txt"
+        eachFile {
+            it.path = it.name == "LICENSE" ? "LICENSE.txt" : it.name
+        }
+        includeEmptyDirs = false
+    }
+    into stagedGameData
+}
+
+// SHA-256 manifest of the bundled support files. Installed copies use it to
+// distinguish an untouched old release file from a user-edited one.
+tasks.register("stageSupportManifest") {
+    dependsOn "stageGameDataAssets"
+    def manifestFile = new File(stagedSupportManifest, "support-files.sha256")
+    inputs.dir stagedGameData
+    outputs.file manifestFile
+
+    doLast {
+        stagedSupportManifest.mkdirs()
+        def lines = []
+        fileTree(stagedGameData).files.sort { it.name }.each { file ->
+            def digest = java.security.MessageDigest.getInstance("SHA-256")
+            file.withInputStream { stream ->
+                byte[] buffer = new byte[65536]
+                int read
+                while ((read = stream.read(buffer)) != -1) {
+                    digest.update(buffer, 0, read)
+                }
+            }
+            def hex = digest.digest().collect { String.format("%02x", it & 0xff) }.join("")
+            lines << (hex + "  " + file.name)
+        }
+        manifestFile.setText(lines.join("\n") + "\n", "UTF-8")
+    }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn "stageGameDataAssets", "stageSupportManifest"
+}

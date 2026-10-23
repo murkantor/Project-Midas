@@ -185,16 +185,21 @@ void texReset(void)
         extern void *s_mpstageselimages;
         extern Gfx *globalDL_0x000;
         static u8 *pristine;
-        u8 *lo = (u8 *) &s_mpstageselimages;
-        u8 *hi = (u8 *) &globalDL_0x000 + 0x78;
+        u8 *p1 = (u8 *) &s_mpstageselimages;
+        u8 *p2 = (u8 *) &globalDL_0x000 + 0x78;
+        u8 *lo = (p1 < p2) ? p1 : (u8 *) &globalDL_0x000;
+        u8 *hi = (p1 < p2) ? p2 : (u8 *) &s_mpstageselimages + 0x78;
+        size_t sz = (size_t) (hi - lo);
 
-        if (pristine == NULL) {
-            pristine = malloc(hi - lo);
-            if (pristine != NULL) {
-                memcpy(pristine, lo, hi - lo);
+        if (hi > lo && sz < 0x200000) {
+            if (pristine == NULL) {
+                pristine = malloc(sz);
+                if (pristine != NULL) {
+                    memcpy(pristine, lo, sz);
+                }
+            } else {
+                memcpy(lo, pristine, sz);
             }
-        } else {
-            memcpy(lo, pristine, hi - lo);
         }
     }
 

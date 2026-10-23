@@ -350,7 +350,9 @@ static struct ShaderProgram* gfx_opengl_create_and_load_new_shader(uint64_t shad
     vs_len += sprintf(vs_buf + vs_len, "#version %s\n", gl_glsl_version_str);
 
     if (gl_es) {
-        append_line(vs_buf, &vs_len, "precision mediump float;");
+        /* Vertex stage defaults to highp; be explicit so drivers that make
+         * mediump the default still compute positions/depth at full range. */
+        append_line(vs_buf, &vs_len, "precision highp float;");
     }
 
     if (gl_glsl_version >= 130) {
@@ -464,7 +466,13 @@ static struct ShaderProgram* gfx_opengl_create_and_load_new_shader(uint64_t shad
     fs_len += sprintf(fs_buf + fs_len, "#version %s\n", gl_glsl_version_str);
 
     if (gl_es) {
+        /* Fragment highp when the GPU has it (ES 3.0 permits mediump-only
+         * fragments); N64 combiner math and fog benefit from the extra range. */
+        append_line(fs_buf, &fs_len, "#ifdef GL_FRAGMENT_PRECISION_HIGH");
+        append_line(fs_buf, &fs_len, "precision highp float;");
+        append_line(fs_buf, &fs_len, "#else");
         append_line(fs_buf, &fs_len, "precision mediump float;");
+        append_line(fs_buf, &fs_len, "#endif");
     }
 
     if (gl_glsl_version >= 130) {
@@ -560,7 +568,7 @@ static struct ShaderProgram* gfx_opengl_create_and_load_new_shader(uint64_t shad
         append_line(fs_buf, &fs_len, "        vec2 scaled_uv = uv + (vec2(-1.5) + xy) / texSize;");
 
         if (current_filter_mode == FILTER_THREE_POINT)
-            append_line(fs_buf, &fs_len, "        lowp vec4 tex = mix(SAMPLE_TEX(t, scaled_uv), filter3point(t, scaled_uv, texSize), three_point_filter);");
+            append_line(fs_buf, &fs_len, "        lowp vec4 tex = mix(SAMPLE_TEX(t, scaled_uv), filter3point(t, scaled_uv, texSize), float(three_point_filter));");
         else
             append_line(fs_buf, &fs_len, "        lowp vec4 tex = SAMPLE_TEX(t, scaled_uv);");
 
@@ -571,7 +579,7 @@ static struct ShaderProgram* gfx_opengl_create_and_load_new_shader(uint64_t shad
     } else {
         if (current_filter_mode == FILTER_THREE_POINT) {
             append_line(fs_buf, &fs_len, "vec4 hookTexture2D(in sampler2D tex, in vec2 uv, in vec2 texSize, in int three_point_filter) {");
-            append_line(fs_buf, &fs_len, "    return mix(SAMPLE_TEX(tex, uv), filter3point(tex, uv, texSize), three_point_filter);");
+            append_line(fs_buf, &fs_len, "    return mix(SAMPLE_TEX(tex, uv), filter3point(tex, uv, texSize), float(three_point_filter));");
             append_line(fs_buf, &fs_len, "}");
         } else {
             append_line(fs_buf, &fs_len, "vec4 hookTexture2D(in sampler2D tex, in vec2 uv, in vec2 texSize) {");
@@ -1490,15 +1498,31 @@ static void gfx_opengl_init_extensions(void) {
 }
 
 static void gfx_opengl_init(void) {
-    if (!gladLoadGLLoader(gl_load_proc) || glGetString == NULL || glEnable == NULL) {
-        sysFatalError("Could not load OpenGL.\nReported SDL error: %s", SDL_GetError());
-    }
-
-    // check if we're using ES or core, which have more limited feature sets
+    // The ES and desktop loaders parse GL_VERSION differently and populate
+    // different function tables (notably glDepthRangef/glClearDepthf), so pick
+    // before touching glad. SDL can report the profile before the context is
+    // bound through the window manager's attributes.
     int val = 0;
     SDL_GL_GetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, &val);
     gl_core_profile = (val == SDL_GL_CONTEXT_PROFILE_CORE);
     gl_es = (val == SDL_GL_CONTEXT_PROFILE_ES);
+
+    const bool loaded = gl_es ? (gladLoadGLES2Loader(gl_load_proc) != 0)
+                              : (gladLoadGLLoader(gl_load_proc) != 0);
+    if (!loaded || glGetString == NULL || glEnable == NULL) {
+        sysFatalError("Could not load %s.\nReported SDL error: %s",
+                      gl_es ? "OpenGL ES" : "OpenGL", SDL_GetError());
+    }
+
+    if (gl_es) {
+        /* GLAD's ES 3.0 table stops before glTexImage2DMultisample (ES 3.1).
+         * Load it when the driver exposes it so the N64-AA multisample texture
+         * path can run; the renderbuffer path remains the ES 3.0 fallback. */
+        if (glad_glTexImage2DMultisample == NULL) {
+            glad_glTexImage2DMultisample =
+                (PFNGLTEXIMAGE2DMULTISAMPLEPROC) SDL_GL_GetProcAddress("glTexImage2DMultisample");
+        }
+    }
 
     gfx_opengl_init_extensions();
 
@@ -2104,7 +2128,7 @@ static GlRetainedProgram* gl_ret_program_get(struct ShaderProgram* prg) {
     size_t vs_len = 0;
     vs_len += sprintf(vs_buf + vs_len, "#version %s\n", gl_glsl_version_str);
     if (gl_es) {
-        append_line(vs_buf, &vs_len, "precision mediump float;");
+        append_line(vs_buf, &vs_len, "precision highp float;");
     }
     if (gl_glsl_version >= 130) {
         append_line(vs_buf, &vs_len, "#define INPUT in");
