@@ -9,7 +9,7 @@
 #include <stdint.h>
 
 typedef int32_t s32;
-typedef int64_t s64;
+typedef long long s64; /* PR/ultratypes.h spells it this way (int64_t is 'long' on arm64) */
 typedef uint32_t u32;
 
 #define LOGFLAG_SHOWMSG 0x100

@@ -221,10 +221,22 @@ extern s32 g_DebugPortalsInputBufferSource2;
 extern s32 g_DebugPortalsInputBufferSource3;
 extern s32 g_DebugPortalsInputBufferSource4;
 
+#if defined(__clang__)
+/* Clang/ELF reports the references below as ambiguous when #pragma weak aliases
+ * a variable to another variable. These four names have no strong definition
+ * or external reference anywhere in the tree, so a macro binds to the same
+ * object without emitting the weak alias. GCC (the desktop builds) keeps the
+ * pragmas, so their object files are unchanged. */
+#define g_DebugPortalsInputBufferSource1 g_DebugPortalsInputBuffer1
+#define g_DebugPortalsInputBufferSource2 g_DebugPortalsInputBuffer2
+#define g_DebugPortalsInputBufferSource3 g_DebugPortalsInputBuffer3
+#define g_DebugPortalsInputBufferSource4 g_DebugPortalsInputBuffer4
+#else
 #pragma weak g_DebugPortalsInputBufferSource1 = g_DebugPortalsInputBuffer1
 #pragma weak g_DebugPortalsInputBufferSource2 = g_DebugPortalsInputBuffer2
 #pragma weak g_DebugPortalsInputBufferSource3 = g_DebugPortalsInputBuffer3
 #pragma weak g_DebugPortalsInputBufferSource4 = g_DebugPortalsInputBuffer4
+#endif
 
 /**
  * Something debug related in the MP manage method.

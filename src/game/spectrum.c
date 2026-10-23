@@ -49,7 +49,14 @@ s32 sub_GAME_7F0D37DC(u32 cycles, u8 specA, u8 port, u8 value);
 // data
 s8 D_8004EC30 = 0x0;
 extern u8 spec_keyboard_row_caps_z_x_c_v;
+#if defined(__clang__)
+/* See lv.c: Clang/ELF cannot resolve a #pragma weak variable alias; this name
+ * has no strong definition or external reference, and the alias targets the
+ * first byte of spec_keyboard_buffer, so the macro is the same binding. */
+#define spec_keyboard_row_caps_z_x_c_v spec_keyboard_buffer[0]
+#else
 #pragma weak spec_keyboard_row_caps_z_x_c_v = spec_keyboard_buffer
+#endif
 u8 spec_keyboard_buffer[] = 
 {
     0xFF, 0xFF, 0xFF, 0xFF,

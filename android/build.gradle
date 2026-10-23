@@ -1,0 +1,5 @@
+// Pinned to the versions cached on the build machines. AGP 8.5.2 requires
+// Gradle 8.7 and a JDK 17+ launcher; the wrapper pins Gradle 8.7.
+plugins {
+    id "com.android.application" version "8.5.2" apply false
+}

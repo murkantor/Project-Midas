@@ -265,7 +265,14 @@ typedef struct {
 	u8	errno;
 } OSContRamIo;
 
-#if !defined(TARGET_N64) && defined(__GLIBC__) && defined(__cplusplus)
+#if !defined(TARGET_N64) && defined(__ANDROID__) && defined(__cplusplus)
+/* Restore bionic's errno macro for hosted C++ TUs (libc++'s threading layer
+ * uses it; the undef above only exists so the struct fields can be DECLARED).
+ * The only C++ TUs are fast3d, which never touch the .errno fields; C TUs keep
+ * it undefined. Re-including <errno.h> would be a no-op under its guard, so
+ * spell bionic's definition out. */
+#define errno (*__errno())
+#elif !defined(TARGET_N64) && defined(__GLIBC__) && defined(__cplusplus)
 /* Restore the glibc errno macro for hosted C++ TUs (libstdc++'s
  * atomic_wait uses it; the undef above only exists so the struct fields
  * can be DECLARED). The only C++ TUs are fast3d, which never touch the
@@ -1005,10 +1012,11 @@ extern void		osAckRamromWrite(void);
 
 /* byte string operations */
 
-#if defined(__GLIBC__) && !defined(TARGET_N64)
-/* Linux port builds: SDL.h drags in <strings.h>, whose size_t prototypes
- * conflict with the N64 int forms below. Take the host's declarations
- * everywhere on glibc so TUs that include both agree. */
+#if (defined(__GLIBC__) || defined(__ANDROID__)) && !defined(TARGET_N64)
+/* Linux/Android port builds: SDL.h drags in <strings.h>, whose size_t
+ * prototypes (and, on bionic, a bzero macro) conflict with the N64 int forms
+ * below. Take the host's declarations everywhere so TUs that include both
+ * agree. */
 #include <strings.h>
 #else
 extern void     bcopy(const void *, void *, int);

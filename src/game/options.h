@@ -188,6 +188,10 @@ void cur_player_set_control_type(int type);
 void init_watch_at_start_of_stage(void);
 Gfx *draw_watch_current_page(Gfx *gdl, Mtx *arg1, s32 watch_transitioning);
 void sub_GAME_7F0A69A8(void);
+void reset_watch_item_is_actively_selected(void);
+void set_controlstick_lr_disabled(void);
+void disable_watch_stick_y_nav_ready(void);
+void sub_GAME_7F0A5210(void);
 
 #endif
 

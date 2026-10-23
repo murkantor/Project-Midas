@@ -397,52 +397,55 @@ union ModelRwData* modelGetNodeRwData(Model *Objinst, ModelNode *root)
     s32 index  = 0;
     union ModelRwData **data = Objinst->datas;
 
-    switch (root->Opcode & 0xff)
+    if (root->Data != NULL)
     {
-        case MODELNODE_OPCODE_HEADER:
+        switch (root->Opcode & 0xff)
         {
-            index = root->Data->Header.RwDataIndex;
-            break;
-        }
-        case MODELNODE_OPCODE_DLCOLLISION:
-        {
-            index = root->Data->DisplayListCollisions.RwDataIndex;
-            break;
-        }
-        case MODELNODE_OPCODE_OP07:
-        {
-            index = root->Data->Op07.RwDataIndex;
-            break;
-        }
-        case MODELNODE_OPCODE_LOD:
-        {
-            index = root->Data->LOD.RwDataIndex;
-            break;
-        }
-        case MODELNODE_OPCODE_SWITCH:
-        {
-            index = root->Data->Switch.RwDataIndex;
-            break;
-        }
-        case MODELNODE_OPCODE_BSP:
-        {
-            index = root->Data->BSP.RwDataIndex;
-            break;
-        }
-        case MODELNODE_OPCODE_OP11:
-        {
-            index = root->Data->Op11.RwDataIndex;
-            break;
-        }
-        case MODELNODE_OPCODE_GUNFIRE:
-        {
-            index = root->Data->Gunfire.RwDataIndex;
-            break;
-        }
-        case MODELNODE_OPCODE_HEAD:
-        {
-            index = root->Data->HeadPlaceholder.RwDataIndex;
-            break;
+            case MODELNODE_OPCODE_HEADER:
+            {
+                index = root->Data->Header.RwDataIndex;
+                break;
+            }
+            case MODELNODE_OPCODE_DLCOLLISION:
+            {
+                index = root->Data->DisplayListCollisions.RwDataIndex;
+                break;
+            }
+            case MODELNODE_OPCODE_OP07:
+            {
+                index = root->Data->Op07.RwDataIndex;
+                break;
+            }
+            case MODELNODE_OPCODE_LOD:
+            {
+                index = root->Data->LOD.RwDataIndex;
+                break;
+            }
+            case MODELNODE_OPCODE_SWITCH:
+            {
+                index = root->Data->Switch.RwDataIndex;
+                break;
+            }
+            case MODELNODE_OPCODE_BSP:
+            {
+                index = root->Data->BSP.RwDataIndex;
+                break;
+            }
+            case MODELNODE_OPCODE_OP11:
+            {
+                index = root->Data->Op11.RwDataIndex;
+                break;
+            }
+            case MODELNODE_OPCODE_GUNFIRE:
+            {
+                index = root->Data->Gunfire.RwDataIndex;
+                break;
+            }
+            case MODELNODE_OPCODE_HEAD:
+            {
+                index = root->Data->HeadPlaceholder.RwDataIndex;
+                break;
+            }
         }
     }
 
@@ -1798,19 +1801,33 @@ void process_15_subposition(ModelRenderData* arg0, Model *model, ModelNode *node
 */
 void modelUpdateDistanceRelations(Model* model, ModelNode* node)
 {
-    union ModelRoData *rodata = node->Data;
-    union ModelRwData *rwdata = modelGetNodeRwData(model, node);
-    Mtxf *mtx = modelFindNodeMtx(model, node, 0);
+    union ModelRoData *rodata;
+    union ModelRwData *rwdata;
+    Mtxf *mtx;
     f32 distance;
+
+    if (node == NULL || node->Data == NULL || model == NULL)
+    {
+        return;
+    }
+
+    rodata = node->Data;
+    rwdata = modelGetNodeRwData(model, node);
+    if (rwdata == NULL)
+    {
+        return;
+    }
+
+    mtx = modelFindNodeMtx(model, node, 0);
 
 #ifndef TARGET_N64
     /* midas.ini [display] high_lod=1: always select the highest-detail LOD
      * (distance 0 picks the MinDistance-0 record) - same mechanism the
      * game itself uses for showcase screens via g_ModelDistanceDisabled. */
     extern s32 portHighLod(void);
-    if (g_ModelDistanceDisabled || portHighLod())
+    if (g_ModelDistanceDisabled || portHighLod() || mtx == NULL)
 #else
-    if (g_ModelDistanceDisabled)
+    if (g_ModelDistanceDisabled || mtx == NULL)
 #endif
     {
         distance = 0;
@@ -5641,6 +5658,10 @@ s32 sub_GAME_7F074CAC(Model *model, ModelNode *node, coord3d *raypos, coord3d *r
 
     hitData = (ModelRoData_Op17Record *) node->Data;
     nodeMtx = modelFindNodeMtx(model, node, 0);
+    if (hitData == NULL || nodeMtx == NULL)
+    {
+        return 0;
+    }
     rayData->data.rel = D_80036408;
     rayData->data.radiusSq = hitData->radiusSq;
     rayData->data.dir.f[0] = raydir->x;
@@ -5963,6 +5984,8 @@ void modelPromoteNodeOffsetsToPointers(ModelNode *node, u32 vma, u32 fileramaddr
         PROMOTE(node->Prev);
         PROMOTE(node->Child);
 
+        if (node->Data != NULL)
+        {
         switch (type)
         {
             case MODELNODE_OPCODE_HEADER:
@@ -6173,6 +6196,7 @@ void modelPromoteNodeOffsetsToPointers(ModelNode *node, u32 vma, u32 fileramaddr
             default:
                 break;
         }
+        }
 
         if (node->Child)
         {
@@ -6332,86 +6356,93 @@ s32 modelCalculateRwDataIndexes(ModelNode *basenode)
     {
         u32 type = node->Opcode & 0xff;
 
-        switch (type)
+        if (node->Data != NULL)
         {
-            case MODELNODE_OPCODE_HEADER:
-                if (1)
-                {
-                    ModelRoData_HeaderRecord *rodata = &node->Data->Header;
-                    rodata->RwDataIndex = len;
-                    len += sizeof(struct ModelRwData_HeaderRecord) / 4;
+            switch (type)
+            {
+                case MODELNODE_OPCODE_HEADER:
+                    if (1)
+                    {
+                        ModelRoData_HeaderRecord *rodata = &node->Data->Header;
+                        rodata->RwDataIndex = len;
+                        len += sizeof(struct ModelRwData_HeaderRecord) / 4;
+                        break;
+                    }
+                case MODELNODE_OPCODE_OP07:
+                    if (1)
+                    {
+                        ModelRoData_Op07Record *rodata = &node->Data->Op07;
+                        rodata->RwDataIndex = len;
+                        len += sizeof(struct ModelRwData_Op07Record) / 4;
+                        break;
+                    }
+                case MODELNODE_OPCODE_LOD:
+                    if (1)
+                    {
+                        ModelRoData_LODRecord *rodata = &node->Data->LOD;
+                        rodata->RwDataIndex = len;
+                        len += sizeof(struct ModelRwData_LODRecord) / 4;
+                        node->Child = rodata->Affects;
+                        break;
+                    }
+                case MODELNODE_OPCODE_SWITCH:
+                    if (1)
+                    {
+                        ModelRoData_SwitchRecord *rodata = &node->Data->Switch;
+                        rodata->RwDataIndex = len;
+                        len += sizeof(struct ModelRwData_SwitchRecord) / 4;
+                        node->Child = rodata->Controls;
+                        break;
+                    }
+                case MODELNODE_OPCODE_HEAD:
+                    if (1)
+                    {
+                        ModelRoData_HeadPlaceholderRecord *rodata = &node->Data->HeadPlaceholder;
+                        rodata->RwDataIndex = len;
+                        len += sizeof(struct ModelRwData_HeadPlaceholderRecord) / 4;
+                        node->Child = NULL;
+                        break;
+                    }
+                case MODELNODE_OPCODE_BSP:
+                    if (1)
+                    {
+                        ModelRoData_BSPRecord *rodata = &node->Data->BSP;
+                        rodata->RwDataIndex = len;
+                        len += sizeof(struct ModelRwData_BSPRecord) / 4;
+                        modelApplyReorderRelationsByArg(node, FALSE);
+                        break;
+                    }
+                case MODELNODE_OPCODE_OP11:
+                    if (1)
+                    {
+                        ModelRoData_Op11Record *rodata = &node->Data->Op11;
+                        rodata->RwDataIndex = len;
+                        len += sizeof(struct ModelRwData_Op11Record) / 4;
+                        break;
+                    }
+                case MODELNODE_OPCODE_GUNFIRE:
+                    if (1)
+                    {
+                        ModelRoData_GunfireRecord *rodata = &node->Data->Gunfire;
+                        rodata->RwDataIndex = len;
+                        len += sizeof(struct ModelRwData_GunfireRecord) / 4;
+                        break;
+                    }
+                case MODELNODE_OPCODE_DLCOLLISION:
+                    if (1)
+                    {
+                        ModelRoData_DisplayList_CollisionRecord *rodata = &node->Data->DisplayListCollisions;
+                        rodata->RwDataIndex = len;
+                        len += sizeof(struct ModelRwData_DisplayList_CollisionRecord) / 4;
+                        break;
+                    }
+                default:
                     break;
-                }
-            case MODELNODE_OPCODE_OP07:
-                if (1)
-                {
-                    ModelRoData_Op07Record *rodata = &node->Data->Op07;
-                    rodata->RwDataIndex = len;
-                    len += sizeof(struct ModelRwData_Op07Record) / 4;
-                    break;
-                }
-            case MODELNODE_OPCODE_LOD:
-                if (1)
-                {
-                    ModelRoData_LODRecord *rodata = &node->Data->LOD;
-                    rodata->RwDataIndex = len;
-                    len += sizeof(struct ModelRwData_LODRecord) / 4;
-                    node->Child = rodata->Affects;
-                    break;
-                }
-            case MODELNODE_OPCODE_SWITCH:
-                if (1)
-                {
-                    ModelRoData_SwitchRecord *rodata = &node->Data->Switch;
-                    rodata->RwDataIndex = len;
-                    len += sizeof(struct ModelRwData_SwitchRecord) / 4;
-                    node->Child = rodata->Controls;
-                    break;
-                }
-            case MODELNODE_OPCODE_HEAD:
-                if (1)
-                {
-                    ModelRoData_HeadPlaceholderRecord *rodata = &node->Data->HeadPlaceholder;
-                    rodata->RwDataIndex = len;
-                    len += sizeof(struct ModelRwData_HeadPlaceholderRecord) / 4;
-                    node->Child = NULL;
-                    break;
-                }
-            case MODELNODE_OPCODE_BSP:
-                if (1)
-                {
-                    ModelRoData_BSPRecord *rodata = &node->Data->BSP;
-                    rodata->RwDataIndex = len;
-                    len += sizeof(struct ModelRwData_BSPRecord) / 4;
-                    modelApplyReorderRelationsByArg(node, FALSE);
-                    break;
-                }
-            case MODELNODE_OPCODE_OP11:
-                if (1)
-                {
-                    ModelRoData_Op11Record *rodata = &node->Data->Op11;
-                    rodata->RwDataIndex = len;
-                    len += sizeof(struct ModelRwData_Op11Record) / 4;
-                    break;
-                }
-            case MODELNODE_OPCODE_GUNFIRE:
-                if (1)
-                {
-                    ModelRoData_GunfireRecord *rodata = &node->Data->Gunfire;
-                    rodata->RwDataIndex = len;
-                    len += sizeof(struct ModelRwData_GunfireRecord) / 4;
-                    break;
-                }
-            case MODELNODE_OPCODE_DLCOLLISION:
-                if (1)
-                {
-                    ModelRoData_DisplayList_CollisionRecord *rodata = &node->Data->DisplayListCollisions;
-                    rodata->RwDataIndex = len;
-                    len += sizeof(struct ModelRwData_DisplayList_CollisionRecord) / 4;
-                    break;
-                }
-            default:
-                break;
+            }
+        }
+        else if (type == MODELNODE_OPCODE_BSP)
+        {
+            modelApplyReorderRelationsByArg(node, FALSE);
         }
 
         if (node->Child)
@@ -6507,24 +6538,24 @@ void modelInitRwData(Model *model, ModelNode *startnode)
 
 
             case MODELNODE_OPCODE_LOD:
-                if (1)
+                if (node->Data != NULL)
                 {
                     ModelRoData_LODRecord* rodata = &node->Data->LOD;
                     ModelRwData_LODRecord* rwdata = &modelGetNodeRwData(model, node)->LOD;
                     rwdata->visible = FALSE;
                     node->Child = rodata->Affects;
-                    break;
                 }
+                break;
 
             case MODELNODE_OPCODE_SWITCH:
-                if (1)
+                if (node->Data != NULL)
                 {
                     ModelRoData_SwitchRecord* rodata = &node->Data->Switch;
                     ModelRwData_SwitchRecord* rwdata = &modelGetNodeRwData(model, node)->Switch;
                     rwdata->visible = TRUE;
                     node->Child = rodata->Controls;
-                    break;
                 }
+                break;
 
             case MODELNODE_OPCODE_HEAD:
                 if (1)
@@ -6561,14 +6592,14 @@ void modelInitRwData(Model *model, ModelNode *startnode)
                 }
 
             case MODELNODE_OPCODE_DLCOLLISION:
-                if (1)
+                if (node->Data != NULL)
                 {
                     ModelRoData_DisplayList_CollisionRecord* rodata = &node->Data->DisplayListCollisions;
                     ModelRwData_DisplayList_CollisionRecord* rwdata = &modelGetNodeRwData(model, node)->DisplayListCollisions;
                     rwdata->Vertices = rodata->Vertices;
                     rwdata->gdl = rodata->Primary;
-                    break;
                 }
+                break;
 
             default:
                 break;
@@ -6697,56 +6728,63 @@ void modelIterateDisplayLists(ModelFileHeader *fileheader, ModelNode **nodeptr, 
     {
         u32 type = node->Opcode & 0xff;
 
-        switch (type)
+        if (node->Data != NULL)
         {
-            case MODELNODE_OPCODE_DL:
-                rodata = node->Data;
+            switch (type)
+            {
+                case MODELNODE_OPCODE_DL:
+                    rodata = node->Data;
 
-                if (node != *nodeptr)
-                {
-                    gdl = rodata->DisplayList.Primary;
-                }
-                else if (rodata->DisplayList.Secondary != *gdlptr)
-                {
-                    gdl = rodata->DisplayList.Secondary;
-                }
-                break;
+                    if (node != *nodeptr)
+                    {
+                        gdl = rodata->DisplayList.Primary;
+                    }
+                    else if (rodata->DisplayList.Secondary != *gdlptr)
+                    {
+                        gdl = rodata->DisplayList.Secondary;
+                    }
+                    break;
 
-            case MODELNODE_OPCODE_DLCOLLISION:
-                rodata = node->Data;
+                case MODELNODE_OPCODE_DLCOLLISION:
+                    rodata = node->Data;
 
-                if (node != *nodeptr)
-                {
-                    gdl = rodata->DisplayListCollisions.Primary;
-                }
-                else if (rodata->DisplayListCollisions.Secondary != *gdlptr)
-                {
-                    gdl = rodata->DisplayListCollisions.Secondary;
-                }
-                break;
+                    if (node != *nodeptr)
+                    {
+                        gdl = rodata->DisplayListCollisions.Primary;
+                    }
+                    else if (rodata->DisplayListCollisions.Secondary != *gdlptr)
+                    {
+                        gdl = rodata->DisplayListCollisions.Secondary;
+                    }
+                    break;
 
-            case MODELNODE_OPCODE_DLPRIMARY:
-                rodata = node->Data;
+                case MODELNODE_OPCODE_DLPRIMARY:
+                    rodata = node->Data;
 
-                if (node != *nodeptr)
-                {
-                    gdl = rodata->DisplayListPrimary.Primary;
-                }
-                break;
+                    if (node != *nodeptr)
+                    {
+                        gdl = rodata->DisplayListPrimary.Primary;
+                    }
+                    break;
 
-            case MODELNODE_OPCODE_LOD:
-                rodata = node->Data;
-                node->Child = rodata->LOD.Affects;
-                break;
+                case MODELNODE_OPCODE_LOD:
+                    rodata = node->Data;
+                    node->Child = rodata->LOD.Affects;
+                    break;
 
-            case MODELNODE_OPCODE_SWITCH:
-                rodata = node->Data;
-                node->Child = rodata->Switch.Controls;
-                break;
+                case MODELNODE_OPCODE_SWITCH:
+                    rodata = node->Data;
+                    node->Child = rodata->Switch.Controls;
+                    break;
 
-            case MODELNODE_OPCODE_BSP:
-                modelApplyReorderRelationsByArg(node, TRUE);
-                break;
+                case MODELNODE_OPCODE_BSP:
+                    modelApplyReorderRelationsByArg(node, TRUE);
+                    break;
+            }
+        }
+        else if (type == MODELNODE_OPCODE_BSP)
+        {
+            modelApplyReorderRelationsByArg(node, TRUE);
         }
 
         if (gdl) { break; }
@@ -6778,7 +6816,14 @@ void modelIterateDisplayLists(ModelFileHeader *fileheader, ModelNode **nodeptr, 
 void modelNodeReplaceGdl(u32 arg0, ModelNode *node, Gfx *find, Gfx *replacement)
 {
     union ModelRoData *rodata;
-    u32 type = node->Opcode & 0xff;
+    u32 type;
+
+    if (node == NULL || node->Data == NULL)
+    {
+        return;
+    }
+
+    type = node->Opcode & 0xff;
 
     switch (type) {
         case MODELNODE_OPCODE_DL:

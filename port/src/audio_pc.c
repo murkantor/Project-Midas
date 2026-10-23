@@ -37,10 +37,12 @@
  */
 
 #include <SDL.h>
+#include <string.h>
 
 #include <ultra64.h>
 #include <PR/libaudio.h>
 #include <PR/abi.h>
+#include "port_android_audio.h"
 
 /* ---- config ------------------------------------------------------------ */
 
@@ -57,6 +59,12 @@ extern u32 g_FrameSize;
 static SDL_AudioDeviceID s_AudioDev;
 static s32 s_AudioDead; /* init failed - stay silent, don't retry every frame */
 static s32 s_ForceOneFrame; /* portAudioPumpForce: bypass the queue-low gate */
+#ifdef __ANDROID__
+static SDL_AudioStream *s_AudioStream;
+static SDL_AudioSpec s_AudioOutput;
+static Uint64 s_AudioRetryAt;
+static s32 s_AudioPaused;
+#endif
 
 /* ---- aspMain interpreter ------------------------------------------------ */
 
@@ -632,13 +640,152 @@ void portAcmdRun(Acmd *list, s32 count)
 
 /* ---- SDL device + frame pump ------------------------------------------- */
 
+#ifdef __ANDROID__
+static SDL_SpinLock s_AudioEventLock;
+static SDL_Event s_AudioEvents[32];
+static unsigned s_AudioEventRead, s_AudioEventWrite;
+
+void portAndroidAudioQueueEvent(const SDL_Event *event)
+{
+    switch (event->type) {
+    case SDL_APP_WILLENTERBACKGROUND:
+    case SDL_APP_DIDENTERBACKGROUND:
+    case SDL_APP_DIDENTERFOREGROUND:
+    case SDL_APP_TERMINATING:
+    case SDL_AUDIODEVICEADDED:
+    case SDL_AUDIODEVICEREMOVED:
+        SDL_AtomicLock(&s_AudioEventLock);
+        if (s_AudioEventWrite - s_AudioEventRead == 32) {
+            ++s_AudioEventRead;
+        }
+        s_AudioEvents[s_AudioEventWrite++ % 32] = *event;
+        SDL_AtomicUnlock(&s_AudioEventLock);
+        break;
+    }
+}
+
+static void portAndroidAudioClose(void)
+{
+    if (s_AudioDev != 0) {
+        SDL_CloseAudioDevice(s_AudioDev);
+        s_AudioDev = 0;
+    }
+    if (s_AudioStream != NULL) {
+        SDL_FreeAudioStream(s_AudioStream);
+        s_AudioStream = NULL;
+    }
+}
+
+static void portAndroidAudioRetry(void)
+{
+    portAndroidAudioClose();
+    s_AudioDead = 1;
+    s_AudioRetryAt = SDL_GetTicks64() + 1000;
+}
+
+void portAndroidAudioHandleEvent(const SDL_Event *event)
+{
+    if (event->type == SDL_APP_WILLENTERBACKGROUND || event->type == SDL_APP_TERMINATING) {
+        extern void portVideoFlushSettings(void);
+        portVideoFlushSettings();
+    }
+    switch (event->type) {
+    case SDL_APP_WILLENTERBACKGROUND:
+    case SDL_APP_DIDENTERBACKGROUND:
+        s_AudioPaused = 1;
+        if (s_AudioDev != 0) {
+            SDL_PauseAudioDevice(s_AudioDev, 1);
+            SDL_ClearQueuedAudio(s_AudioDev);
+        }
+        if (s_AudioStream != NULL) {
+            SDL_AudioStreamClear(s_AudioStream);
+        }
+        break;
+    case SDL_APP_DIDENTERFOREGROUND:
+        s_AudioPaused = 0;
+        s_AudioDead = 0;
+        s_AudioRetryAt = 0;
+        if (s_AudioDev != 0) {
+            SDL_PauseAudioDevice(s_AudioDev, 0);
+        }
+        break;
+    case SDL_AUDIODEVICEREMOVED:
+        if (!event->adevice.iscapture && event->adevice.which == s_AudioDev) {
+            portAndroidAudioRetry();
+        }
+        break;
+    case SDL_AUDIODEVICEADDED:
+        if (!event->adevice.iscapture && s_AudioDev == 0) {
+            s_AudioDead = 0;
+            s_AudioRetryAt = 0;
+        }
+        break;
+    case SDL_APP_TERMINATING:
+        s_AudioPaused = 1;
+        portAndroidAudioClose();
+        break;
+    }
+}
+
+static void portAndroidAudioPumpEvents(void)
+{
+    SDL_Event event;
+    for (;;) {
+        SDL_AtomicLock(&s_AudioEventLock);
+        if (s_AudioEventRead == s_AudioEventWrite) {
+            SDL_AtomicUnlock(&s_AudioEventLock);
+            break;
+        }
+        event = s_AudioEvents[s_AudioEventRead++ % 32];
+        SDL_AtomicUnlock(&s_AudioEventLock);
+        portAndroidAudioHandleEvent(&event);
+    }
+}
+
+/* Keep the queue budgets in synthesizer bytes even when the Android device
+ * runs at 48 kHz, float samples, or a different channel count. */
+static u32 portAndroidAudioQueuedBytes(void)
+{
+    u64 bytes = SDL_GetQueuedAudioSize(s_AudioDev);
+    u32 rate = s_AudioOutput.freq * s_AudioOutput.channels *
+               (SDL_AUDIO_BITSIZE(s_AudioOutput.format) / 8);
+    return rate != 0 ? (u32) (bytes * PORT_AUDIO_RATE * 4 / rate) : 0;
+}
+
+static void portAndroidAudioQueue(const s16 *samples, u32 count)
+{
+    u8 output[4096];
+    int bytes;
+
+    if (SDL_AudioStreamPut(s_AudioStream, samples, count * 4) < 0) {
+        portAndroidAudioRetry();
+        return;
+    }
+    while ((bytes = SDL_AudioStreamAvailable(s_AudioStream)) > 0) {
+        bytes = SDL_AudioStreamGet(s_AudioStream, output, sizeof(output));
+        if (bytes <= 0 || SDL_QueueAudio(s_AudioDev, output, (Uint32) bytes) < 0) {
+            portAndroidAudioRetry();
+            return;
+        }
+    }
+    if (bytes < 0) {
+        portAndroidAudioRetry();
+    }
+}
+#endif
+
 static void portAudioInit(void)
 {
     SDL_AudioSpec want;
     SDL_AudioSpec have;
 
+#ifdef __ANDROID__
+    if (!SDL_WasInit(SDL_INIT_AUDIO) && SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
+        portAndroidAudioRetry();
+#else
     if (SDL_InitSubSystem(SDL_INIT_AUDIO) != 0) {
         s_AudioDead = 1;
+#endif
         return;
     }
 
@@ -648,12 +795,35 @@ static void portAudioInit(void)
     want.channels = 2;
     want.samples = 512;
 
+#ifdef __ANDROID__
+    s_AudioDev = SDL_OpenAudioDevice(NULL, 0, &want, &have,
+        SDL_AUDIO_ALLOW_FREQUENCY_CHANGE | SDL_AUDIO_ALLOW_FORMAT_CHANGE |
+        SDL_AUDIO_ALLOW_CHANNELS_CHANGE);
+    if (s_AudioDev != 0) {
+        s_AudioOutput = have;
+        s_AudioStream = SDL_NewAudioStream(AUDIO_S16SYS, 2, PORT_AUDIO_RATE,
+                                          have.format, have.channels, have.freq);
+        if (s_AudioStream == NULL) {
+            portAndroidAudioRetry();
+            return;
+        }
+    }
+#else
     s_AudioDev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
+#endif
     if (s_AudioDev == 0) {
+#ifdef __ANDROID__
+        portAndroidAudioRetry();
+#else
         s_AudioDead = 1;
+#endif
         return;
     }
+#ifdef __ANDROID__
+    SDL_PauseAudioDevice(s_AudioDev, s_AudioPaused);
+#else
     SDL_PauseAudioDevice(s_AudioDev, 0);
+#endif
 
     {
         f32 v = (f32)have.freq;
@@ -678,6 +848,19 @@ void portAudioPump(void)
     static s32 s_InPump;
     s32 guard;
 
+#ifdef __ANDROID__
+    portAndroidAudioPumpEvents();
+    if (s_AudioPaused && !s_ForceOneFrame) {
+        return;
+    }
+    if (!s_AudioPaused && s_AudioDev != 0 &&
+        SDL_GetAudioDeviceStatus(s_AudioDev) == SDL_AUDIO_STOPPED) {
+        portAndroidAudioRetry();
+    }
+    if (s_AudioDead && SDL_GetTicks64() >= s_AudioRetryAt) {
+        s_AudioDead = 0;
+    }
+#endif
     if (s_AudioDead) {
         return;
     }
@@ -709,7 +892,11 @@ void portAudioPump(void)
         u32 samples = g_FrameSize != 0 ? g_FrameSize : 368;
 
         if (!s_ForceOneFrame &&
+#ifdef __ANDROID__
+            portAndroidAudioQueuedBytes() >= PORT_AUDIO_QUEUE_LOW) {
+#else
             SDL_GetQueuedAudioSize(s_AudioDev) >= PORT_AUDIO_QUEUE_LOW) {
+#endif
             break;
         }
         if (samples > PORT_MAX_FRAME_SAMPLES) {
@@ -743,9 +930,18 @@ void portAudioPump(void)
             }
         }
 
+#ifdef __ANDROID__
+        if (!s_AudioPaused && portAndroidAudioQueuedBytes() < PORT_AUDIO_QUEUE_MAX) {
+            portAndroidAudioQueue(frameBuf, samples);
+            if (s_AudioDead) {
+                break;
+            }
+        }
+#else
         if (SDL_GetQueuedAudioSize(s_AudioDev) < PORT_AUDIO_QUEUE_MAX) {
             SDL_QueueAudio(s_AudioDev, frameBuf, samples * 4);
         }
+#endif
     }
 
     s_InPump = 0;

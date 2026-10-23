@@ -1,6 +1,34 @@
+#if !defined(TARGET_N64)
+/* PC/Android: this repo header shadows the toolchain's <limits.h> via
+ * -Iinclude, which breaks libc++'s <climits> and leaves bionic's fortify
+ * <unistd.h> without SSIZE_MAX. Defer to the real header before defining the
+ * guard (same pattern as stddef.h/stdlib.h), and keep the SGI crop below
+ * N64-only: redefining CHAR_MIN/MB_LEN_MAX after the hosted header disagrees
+ * with the host libc. */
+#include_next <limits.h>
+/* Legacy surface: the SGI crop below exported the <float.h> limits
+ * (DBL_DIG/DBL_MAX/DBL_MIN/FLT_DIG/FLT_MAX/FLT_MIN) from <limits.h>, and
+ * decomp TUs such as bgfog.c call FLT_MAX after including only <limits.h>.
+ * <float.h> is the standard home, and is available under -ffreestanding too. */
+#include <float.h>
+/* The C flags use -ffreestanding, so __STDC_HOSTED__ is 0 and clang's own
+ * <limits.h> deliberately skips the system header, leaving only the ISO C
+ * limits. bionic's fortify <unistd.h> still needs POSIX SSIZE_MAX, so supply
+ * the same definition bionic uses when it did not arrive through the system
+ * header (MinGW/glibc already define it). */
+#ifndef SSIZE_MAX
+#    if defined(__LP64__)
+#        define SSIZE_MAX LONG_MAX
+#    else
+#        define SSIZE_MAX INT_MAX
+#    endif
+#endif
+#endif
+
 #ifndef _LIMITS_H
 #define _LIMITS_H
 
+#ifdef TARGET_N64
 /* Sizes of integral types */
 #define CHAR_BIT  8      /* max # of bits in a "char" */
 #define SCHAR_MIN (-128) /* min value of a "signed char" */
@@ -46,6 +74,8 @@
 #    define FLT_MAX 3.40282347E+38 /* max decimal value of a "float" */
 #    define FLT_MIN 1.17549435E-38 /* min decimal value of a "float" */
 #endif                             /* __STDC__ */
+
+#endif /* TARGET_N64 */
 
 #endif
 

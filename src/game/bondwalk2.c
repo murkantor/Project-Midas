@@ -1,4 +1,5 @@
 #include <ultra64.h>
+#include "bondwalk2.h"
 
 /**
  * Draws a textured rectangle on the screen.

@@ -16,6 +16,7 @@
 #include <direct.h>   /* _mkdir: portLogPath */
 #else
 #include <sys/stat.h> /* mkdir: portLogPath */
+#include <unistd.h>   /* _exit/readlink */
 #endif
 
 /* port_console.c: same output as the fprintf(stderr, ...) this replaced,
@@ -512,7 +513,7 @@ static void portArmWatchpoints(void)
         CloseHandle(th);
     }
 }
-#else
+#elif !defined(__ANDROID__)
 #include <execinfo.h>
 
 /* Bring-up crash handler: print a raw backtrace (addresses decode with
@@ -582,15 +583,25 @@ void ge_dbg_gfxdump(const char *tag, void *gdl, int count)
  * launched from Explorer or a shell with any working directory. */
 static char sPortRootDir[1024]; /* with trailing separator; "" = cwd fallback */
 
-#ifndef _WIN32
-#include <unistd.h> /* readlink */
-#endif
-
 static void portInitRootDir(const char *argv0)
 {
     int last = -1;
     int i;
-#ifdef _WIN32
+#ifdef __ANDROID__
+    /* SDLActivity runs inside app_process; /proc/self/exe is not a writable
+     * game directory. Keep every existing relative save/config path private. */
+    extern const char *SDL_AndroidGetInternalStoragePath(void);
+    const char *root = SDL_AndroidGetInternalStoragePath();
+    int n;
+
+    (void) argv0;
+    if (root == NULL || root[0] != '/' ||
+        (n = snprintf(sPortRootDir, sizeof(sPortRootDir), "%s/", root)) < 0 ||
+        (size_t) n >= sizeof(sPortRootDir)) {
+        portConLogf("ge: Android internal storage is unavailable\n");
+        exit(1);
+    }
+#elif defined(_WIN32)
     /* authoritative on Windows regardless of how we were launched */
     DWORD n = GetModuleFileNameA(NULL, sPortRootDir, sizeof(sPortRootDir) - 1);
     if (n == 0 || n >= sizeof(sPortRootDir) - 1) {
@@ -737,7 +748,12 @@ static void portDirectLaunchLog(void)
 }
 #endif
 
+#ifdef __ANDROID__
+/* SDLActivity resolves this exported symbol from libmain.so. */
+__attribute__((visibility("default"))) int SDL_main(int argc, char **argv)
+#else
 int main(int argc, char **argv)
+#endif
 {
     { /* before the first log line, so the tilde console's ring holds the
        * whole run from `ge: root:` onward (spec section 7) */
@@ -782,6 +798,9 @@ int main(int argc, char **argv)
      * below (arena reservation, overlay check, SDL/GL, controller init) can
      * hang in a hooked process. The watchdog's 60 s boot grace covers all of
      * it. */
+#ifndef __ANDROID__
+    /* Android's default native crash handler writes a full tombstone. Bionic
+     * has no execinfo API, and replacing its handler loses that diagnostic. */
     signal(SIGSEGV, portCrashHandler);
 #ifdef _WIN32
     SetUnhandledExceptionFilter(portSehHandler);
@@ -793,6 +812,7 @@ int main(int argc, char **argv)
 #endif
     signal(SIGFPE, portCrashHandler);
     signal(SIGILL, portCrashHandler);
+#endif
 #ifdef _WIN32
     /* GE_STALLTEST=1: park the main thread here forever so the stall
      * watchdog's boot-grace path + loader-lock-free module naming can be

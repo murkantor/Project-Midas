@@ -3,44 +3,115 @@ project(ge007 C)
 
 # GoldenEye PC port build (docs/port/PORT-PLAN.md). Built 32-bit first, which
 # defuses the codebase's pointer<->s32 casts and keeps Gfx 8 bytes.
-# The N64 ROM build stays on the classic Makefile; this file is PC-only.
+# The N64 ROM build stays on the classic Makefile; this file also builds the
+# Android arm64-v8a shell library (libmain.so) with SDL2 + GLES3.
+# armeabi-v7a is available only as an explicit experimental bring-up.
+#
+# Android is NOT a parity claim: the 32-bit-only layout contract in the asset
+# lane and the interpreter's pointer<->s32 assumptions need their own audit.
+
+# Android: pinned SDL2 source is added before the root compile flags below, so
+# the dependency is not built with GE's decompiled-code options/definitions.
+include(cmake/android-sdl2.cmake)
 
 set(CMAKE_C_STANDARD 11)
 
-add_compile_options(
-    -m32
-    # Use SSE scalar floats so every operation rounds to single precision like
-    # the N64 FPU; x87's 80-bit excess precision flips borderline comparisons
-    # (it broke the stan.c tile-walk edge test and room visibility in Egypt).
-    -msse2
-    -mfpmath=sse
-    -fno-strict-aliasing
-    -fwrapv
-    -funsigned-char
-    # crash-handler EBP-chain walk (port/src/main.c) needs real frame pointers
-    -fno-omit-frame-pointer
-    # DWARF in every build (incl. Windows PE): zero runtime cost, and it
-    # upgrades crash symbolization from symbol+offset to file:line
-    # (addr2line/gdb work on the exe directly)
-    -g
-    # -O2, keeping the flags that defuse decompiled-code UB (-fno-strict-aliasing
-    # -fwrapv -funsigned-char -msse2 -mfpmath=sse); verified pixel-identical to
-    # the old -Og build (see docs/port/optimisation-inventory.md).
-    -O2
-    # (Audit recipe: swap the -w below for -Wreturn-type and rebuild, since
-    # falling off a non-void function is live UB at -O2. Keep the tree clean.)
-    -w
-    # C-only: game code is self-contained against repo-local headers;
-    # fast3d C++ needs hosted stdlib and no ms-extensions quirks.
-    $<$<COMPILE_LANGUAGE:C>:-ffreestanding>
-    $<$<COMPILE_LANGUAGE:C>:-fms-extensions>
-    $<$<COMPILE_LANGUAGE:C>:-fcommon>
-)
+if(ANDROID)
+    # arm64-v8a is the primary Android target. armeabi-v7a is an explicit
+    # experimental bring-up (32-bit pointers keep the decompiled structures
+    # closer to their original width) and must never become the release ABI.
+    if(CMAKE_ANDROID_ARCH_ABI STREQUAL "arm64-v8a")
+        set(GE_ANDROID_ARM64 ON)
+        message(STATUS "Android ABI: arm64-v8a (primary)")
+    elseif(CMAKE_ANDROID_ARCH_ABI STREQUAL "armeabi-v7a")
+        set(GE_ANDROID_ARM32_EXPERIMENTAL ON)
+        message(WARNING
+            "Android ABI armeabi-v7a is EXPERIMENTAL (32-bit bring-up). "
+            "arm64-v8a remains the primary porting target; neither ABI is release-ready.")
+    else()
+        message(FATAL_ERROR
+            "Unsupported Android ABI '${CMAKE_ANDROID_ARCH_ABI}'. "
+            "Use arm64-v8a (primary) or armeabi-v7a (experimental).")
+    endif()
+
+    option(GE_ANDROID_ARM32_RELAXED_TYPES
+        "arm32 only: downgrade GCC-era pointer/int conversion diagnostics (experimental, not a correctness claim)" OFF)
+    if(GE_ANDROID_ARM32_RELAXED_TYPES AND NOT GE_ANDROID_ARM32_EXPERIMENTAL)
+        message(FATAL_ERROR "GE_ANDROID_ARM32_RELAXED_TYPES is armeabi-v7a only")
+    endif()
+endif()
+
+if(ANDROID)
+    # Both Android ABIs put every object into libmain.so, so PIC is mandatory.
+    # No -m32/-msse2/-mfpmath=sse here (i386-only; the ARM FPU round-to-nearest
+    # already matches the N64's float behaviour for these paths).
+    add_compile_options(
+        -fPIC
+        -fno-strict-aliasing
+        -fwrapv
+        -funsigned-char
+        -fno-omit-frame-pointer
+        -g
+        -O2
+        -w
+        $<$<COMPILE_LANGUAGE:C>:-Wno-error=implicit-function-declaration>
+        $<$<COMPILE_LANGUAGE:C>:-Wno-error=incompatible-pointer-types>
+        $<$<COMPILE_LANGUAGE:C>:-Wno-error=int-conversion>
+        $<$<COMPILE_LANGUAGE:C>:-ffreestanding>
+        $<$<COMPILE_LANGUAGE:C>:-fms-extensions>
+        $<$<COMPILE_LANGUAGE:C>:-fcommon>
+    )
+    if(GE_ANDROID_ARM32_RELAXED_TYPES)
+        message(WARNING "Experimental arm32: GCC-era pointer/int diagnostics are downgraded")
+        add_compile_options(
+            $<$<COMPILE_LANGUAGE:C>:-Wno-int-conversion>
+            $<$<COMPILE_LANGUAGE:C>:-Wno-incompatible-pointer-types>)
+    endif()
+else()
+    add_compile_options(
+        -m32
+        # Use SSE scalar floats so every operation rounds to single precision like
+        # the N64 FPU; x87's 80-bit excess precision flips borderline comparisons
+        # (it broke the stan.c tile-walk edge test and room visibility in Egypt).
+        -msse2
+        -mfpmath=sse
+        -fno-strict-aliasing
+        -fwrapv
+        -funsigned-char
+        # crash-handler EBP-chain walk (port/src/main.c) needs real frame pointers
+        -fno-omit-frame-pointer
+        # DWARF in every build (incl. Windows PE): zero runtime cost, and it
+        # upgrades crash symbolization from symbol+offset to file:line
+        # (addr2line/gdb work on the exe directly)
+        -g
+        # -O2, keeping the flags that defuse decompiled-code UB (-fno-strict-aliasing
+        # -fwrapv -funsigned-char -msse2 -mfpmath=sse); verified pixel-identical to
+        # the old -Og build (see docs/port/optimisation-inventory.md).
+        -O2
+        # (Audit recipe: swap the -w below for -Wreturn-type and rebuild, since
+        # falling off a non-void function is live UB at -O2. Keep the tree clean.)
+        -w
+        # C-only: game code is self-contained against repo-local headers;
+        # fast3d C++ needs hosted stdlib and no ms-extensions quirks.
+        $<$<COMPILE_LANGUAGE:C>:-ffreestanding>
+        $<$<COMPILE_LANGUAGE:C>:-fms-extensions>
+        $<$<COMPILE_LANGUAGE:C>:-fcommon>
+    )
+endif()
 # -no-pie: the compiled-in asset objects (below) are built -fno-pic so their
 # pointer-laden .data needs no PIC indirection; a PIE final link would reject
 # their R_386_32 relocations. MinGW PE has no PIE concept and its gcc driver
 # rejects the flag, so it is ELF-only.
-if(WIN32)
+if(ANDROID)
+    # libmain.so is a shared object, not a PIE executable: PIC on the objects
+    # plus the default -shared link. 16 KB ELF segment alignment is required by
+    # Android 15+ arm64 devices (NDK r26 needs it requested explicitly; r27+
+    # defaults to it, where this is a harmless no-op). armeabi-v7a remains on
+    # 4 KB pages.
+    if(GE_ANDROID_ARM64)
+        add_link_options(-Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384)
+    endif()
+elseif(WIN32)
     # Statically link libstdc++/libgcc so the exe needs no extra DLLs, set the
     # image base above the N64 segment range so gfx_pc.cpp seg_addr can tell
     # addresses from segment refs, and use a 16MB stack (recursive room/portal
@@ -191,6 +262,16 @@ set(ASSET_C_FLAGS
     -I${CMAKE_SOURCE_DIR}/port/include
     -I${CMAKE_SOURCE_DIR}/src/libultra)
 
+if(ANDROID)
+    # The asset lane below is an i386/GCC layout contract: each TU is compiled
+    # -fno-pic and objcopy'd so load_object_fill_header can find structures by
+    # .data offset, with -malign-data=abi reproducing the N64 file layout. That
+    # contract is unverified on arm64/LLVM and pointer-size changes are owned by
+    # the separate ARM64 engine audit, so Android builds ROM-only and does not
+    # compile any asset TUs. (No fake data: the ROM path is mandatory.)
+    set(ASSET_OBJS)
+    message(STATUS "Android: compiled-in asset TUs disabled (i386 layout contract); ROM-only")
+else()
 if(NOT CMAKE_OBJCOPY)
     set(CMAKE_OBJCOPY objcopy)
 endif()
@@ -266,6 +347,7 @@ else()
     message(STATUS "GE_ROMDATA_FALLBACK=OFF: dropping the served asset objects from the exe (ROM mandatory)")
 endif()
 set_source_files_properties(${ASSET_OBJS} PROPERTIES EXTERNAL_OBJECT TRUE GENERATED TRUE)
+endif() # ANDROID asset lane
 
 # Loose single-TU asset data (unique symbol names; compiled like game code):
 set(ASSET_LOOSE_SRC
@@ -298,6 +380,11 @@ file(GLOB PORT_SRC CONFIGURE_DEPENDS port/src/*.c)
 # only).
 option(GE_HEADLESS "Build without SDL (null renderer, no audio)" OFF)
 option(GE_SANITIZE "AddressSanitizer + UBSan build (implies headless)" OFF)
+if(ANDROID AND GE_SANITIZE)
+    # NDK ASan needs a wrap.sh/run-as setup and a device-side runtime; not wired
+    # into the Android shell yet. Fail rather than silently build uninstrumented.
+    message(FATAL_ERROR "GE_SANITIZE is not wired up for Android in this build")
+endif()
 if(GE_SANITIZE)
     # Only default to headless when GE_VIDEO wasn't explicitly requested -
     # a GE_VIDEO=ON + GE_SANITIZE=ON build (real fast3d/SDL2 renderer,
@@ -357,7 +444,13 @@ list(APPEND PORT_SRC src/libultrare/io/vitbl.c)
 # Video: fast3d interpreter + SDL2/OpenGL. OFF by default until the
 # GE microcode opcode work lands (docs/port/ge-microcode.md); the null
 # renderer in pcsched.c stays the headless default.
-option(GE_VIDEO "Build the fast3d renderer (SDL2 + OpenGL)" OFF)
+if(ANDROID)
+    # The Android shell is a game app: no null-renderer build is useful.
+    set(GE_VIDEO_DEFAULT ON)
+else()
+    set(GE_VIDEO_DEFAULT OFF)
+endif()
+option(GE_VIDEO "Build the fast3d renderer (SDL2 + OpenGL/GLES)" ${GE_VIDEO_DEFAULT})
 
 # Testing convenience: every solo mission, bonus stage and difficulty
 # (incl. 007 mode) selectable regardless of save state. Progression logic
@@ -370,10 +463,33 @@ endif()
 # By default the exe carries none of Rare's data and exits without the user's ROM.
 # -DGE_ROMDATA_FALLBACK=ON keeps compiled-in copies as a no-ROM fallback (see docs/port/romdata.md).
 option(GE_ROMDATA_FALLBACK "Keep compiled-in copies of the ROM-served asset classes (GE_ROMDATA=0 / missing-ROM fallback)" OFF)
+if(ANDROID AND GE_ROMDATA_FALLBACK)
+    # Honest guard: the fallback lane compiles the same i386 layout-contract
+    # asset TUs that are disabled on Android above. Enabling it here would
+    # produce objects whose offsets load_object_fill_header cannot trust.
+    message(FATAL_ERROR
+        "GE_ROMDATA_FALLBACK=ON is not supported on Android: the compiled-in "
+        "asset layout contract is i386/GCC-only and unverified on arm64/LLVM. "
+        "Build ROM-only (default).")
+endif()
 if(GE_ROMDATA_FALLBACK)
     set_source_files_properties(port/src/segments.c port/src/ramrom_data.c port/src/romdata.c port/src/animdata.c
         PROPERTIES COMPILE_DEFINITIONS GE_ROMDATA_FALLBACK=1)
     list(APPEND ASSET_LOOSE_SRC ${ASSET_LOOSE_FALLBACK_SRC})
+endif()
+
+if(ANDROID)
+    # Reuse the full controller/remapping backend. The Android bridge only
+    # adds a virtual touch pad; it is not a replacement for input_pc.c.
+    list(REMOVE_ITEM PORT_SRC
+        ${CMAKE_SOURCE_DIR}/port/src/raphnet.c)
+    if(EXISTS ${CMAKE_SOURCE_DIR}/port/android/android_input.c)
+        list(APPEND PORT_SRC ${CMAKE_SOURCE_DIR}/port/android/android_input.c)
+    else()
+        message(WARNING
+            "port/android/android_input.c is missing: configure succeeds, the "
+            "Android link will fail until the Android input backend lands.")
+    endif()
 endif()
 
 if(GE_VIDEO)
@@ -396,11 +512,28 @@ else()
         ${CMAKE_SOURCE_DIR}/port/src/raphnet.c)
 endif()
 
-add_executable(ge ${GAME_SRC} ${ENGINE_SRC} ${GU_SRC} ${PORT_SRC}
-               ${ASSET_LOOSE_SRC} ${ASSET_OBJS} ${FAST3D_SRC})
-# The executable is named ProjectMidas, but the CMake target stays `ge` so build
-# scripts keep working, and ge_direct.log/Profiles keep their names.
-set_target_properties(ge PROPERTIES OUTPUT_NAME ProjectMidas)
+if(ANDROID)
+    # SDLActivity loads libmain.so and calls its exported SDL_main (port/src/
+    # main.c). A shared library, so PIC and no executable PIE flags.
+    add_library(ge SHARED ${GAME_SRC} ${ENGINE_SRC} ${GU_SRC} ${PORT_SRC}
+                ${ASSET_LOOSE_SRC} ${ASSET_OBJS} ${FAST3D_SRC})
+    set_target_properties(ge PROPERTIES
+        OUTPUT_NAME main
+        POSITION_INDEPENDENT_CODE ON
+        C_VISIBILITY_PRESET default
+        CXX_VISIBILITY_PRESET default)
+
+    # include/math.h and include/limits.h shadow libc++'s wrappers because
+    # -Iinclude precedes the NDK's own include dirs. Those two shims now
+    # #include_next for hosted C++ (same pattern as stddef.h/stdlib.h); C keeps
+    # the N64 definitions. No extra C++ include roots are added here.
+else()
+    add_executable(ge ${GAME_SRC} ${ENGINE_SRC} ${GU_SRC} ${PORT_SRC}
+                   ${ASSET_LOOSE_SRC} ${ASSET_OBJS} ${FAST3D_SRC})
+    # The executable is named ProjectMidas, but the CMake target stays `ge` so build
+    # scripts keep working, and ge_direct.log/Profiles keep their names.
+    set_target_properties(ge PROPERTIES OUTPUT_NAME ProjectMidas)
+endif()
 # The exe's own icon (Explorer, a pinned taskbar entry): port/win/ProjectMidas.ico,
 # generated with the window icon by scripts/port/make_icon.py.
 if(WIN32)
@@ -429,7 +562,14 @@ target_include_directories(ge PRIVATE ${CMAKE_BINARY_DIR}/generated)
 target_link_libraries(ge m)
 
 if(GE_VIDEO)
-    if(WIN32)
+    if(ANDROID)
+        # SDL2 is built from the pinned checkout (cmake/android-sdl2.cmake):
+        # libSDL2.so beside libmain.so, exactly what SDLActivity's default
+        # getLibraries() loads. Header propagation comes from the target too.
+        target_link_libraries(ge SDL2::SDL2 log)
+        target_include_directories(ge PRIVATE ${GE_SDL2_INCLUDE_DIR})
+        message(STATUS "Android: game -> libmain.so, SDL2 -> ${GE_SDL2_ROOT}/include")
+    elseif(WIN32)
         # the SDL2 MinGW development package: third_party/ by default, or
         # SDL2_MINGW_ROOT (the Docker image unpacks it in the home folder)
         set(SDL2_MINGW_ROOT "" CACHE PATH "SDL2 MinGW package's i686-w64-mingw32 folder (default: third_party/SDL2-2.30.11/i686-w64-mingw32)")
@@ -456,16 +596,22 @@ if(GE_VIDEO)
             target_link_libraries(ge SDL2 GL dl pthread)
         endif()
     endif()
-    # the files a release ships beside the game, so a fresh build runs the
-    # same: controller mappings and layouts (without them a new install has
-    # no default binds), the ini help and the base shader list
-    add_custom_command(TARGET ge POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_SOURCE_DIR}/tools/gamecontrollerdb.txt
-            ${CMAKE_SOURCE_DIR}/tools/gamecontrollerdefault.txt
-            ${CMAKE_SOURCE_DIR}/tools/midas_ini_help.txt
-            $<TARGET_FILE_DIR:ge>
-        COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:ge>/Data
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${CMAKE_SOURCE_DIR}/tools/shaders_base.txt $<TARGET_FILE_DIR:ge>/Data/shaders_base.txt)
+    if(NOT ANDROID)
+        # the files a release ships beside the game, so a fresh build runs the
+        # same: controller mappings and layouts (without them a new install has
+        # no default binds), the ini help and the base shader list
+        add_custom_command(TARGET ge POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${CMAKE_SOURCE_DIR}/tools/gamecontrollerdb.txt
+                ${CMAKE_SOURCE_DIR}/tools/gamecontrollerdefault.txt
+                ${CMAKE_SOURCE_DIR}/tools/midas_ini_help.txt
+                $<TARGET_FILE_DIR:ge>
+            COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:ge>/Data
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                ${CMAKE_SOURCE_DIR}/tools/shaders_base.txt $<TARGET_FILE_DIR:ge>/Data/shaders_base.txt)
+    else()
+        message(STATUS
+            "Android: package tools/{gamecontrollerdb,gamecontrollerdefault,"
+            "midas_ini_help,shaders_base}.txt as app assets in the Gradle shell")
+    endif()
 endif()

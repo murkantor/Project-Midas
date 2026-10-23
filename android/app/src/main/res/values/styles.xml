@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="AppTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:colorAccent">#D4AF37</item>
+        <item name="android:colorPrimary">#1A1C22</item>
+        <item name="android:windowBackground">#101114</item>
+        <item name="android:statusBarColor">#101114</item>
+        <item name="android:navigationBarColor">#101114</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <style name="SplashTheme" parent="@android:style/Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowBackground">@drawable/splash_screen</item>
+        <item name="android:windowContentOverlay">@null</item>
+    </style>
+
+    <style name="GameTheme" parent="@android:style/Theme.Material.NoActionBar.Fullscreen">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowBackground">@drawable/splash_screen</item>
+        <item name="android:windowContentOverlay">@null</item>
+    </style>
+
+    <style name="RomStatus">
+        <item name="android:textSize">18sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:textColor">#D4AF37</item>
+    </style>
+
+    <style name="RomBody">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">#CCCCCC</item>
+        <item name="android:lineSpacingMultiplier">1.2</item>
+    </style>
+
+    <style name="RomError">
+        <item name="android:textSize">15sp</item>
+        <item name="android:textColor">#E53935</item>
+        <item name="android:lineSpacingMultiplier">1.2</item>
+    </style>
+</resources>

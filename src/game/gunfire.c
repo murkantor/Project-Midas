@@ -28,6 +28,7 @@
 #include "loadobjectmodel.h"
 #include "objecthandler.h"
 #include "image.h"
+#include "language.h"
 #include "tex.h"
 #include "debugmenu_handler.h"
 #include "fr.h"

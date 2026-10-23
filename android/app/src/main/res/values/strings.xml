@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Project Midas</string>
+    <string name="rom_heading">GoldenEye 007 (USA)</string>
+    <string name="rom_subtitle">GoldenEye 007 Decompilation Port for Android</string>
+    <string name="rom_status_missing">No ROM Installed</string>
+    <string name="rom_status_ready">ROM Installed &amp; Ready</string>
+    <string name="rom_detail_missing">GoldenEye 007 (USA).z64 is required to run the game. Grant storage permission to auto-detect it, or select it manually.</string>
+    <string name="rom_detail_ready">ROM: %1$s\nFormat: %2$s\nInstalled: %3$s</string>
+    <string name="button_choose_rom">Choose ROM Manually\u2026</string>
+    <string name="button_scan_rom">Scan Device for ROM</string>
+    <string name="button_grant_permission">Grant Storage Access</string>
+    <string name="button_play">Play GoldenEye 007</string>
+    <string name="button_change_rom">Change ROM\u2026</string>
+    <string name="importing_rom">Installing &amp; verifying ROM\u2026</string>
+    <string name="scanning_device">Scanning device for GoldenEye 007 (USA)\u2026</string>
+    <string name="import_cancelled">No ROM chosen. Existing ROM, if any, is unchanged.</string>
+    <string name="import_success">Imported GoldenEye 007 (USA).</string>
+    <string name="import_failed">Import failed: %1$s</string>
+    <string name="persist_failed">Could not acquire persistent permission for this file.</string>
+    <string name="picker_unavailable">No document picker available on this device.</string>
+    <string name="rom_not_found_auto">Could not automatically find GoldenEye 007 (USA).z64 on this device. Place it in Downloads or your ROMs folder, or select it manually.</string>
+    <string name="storage_permission_needed">Storage permission is required to search your device for GoldenEye 007 (USA).z64.</string>
+    <string name="privacy_note">Project Midas never uploads your ROM or telemetry. The cartridge image is validated and stored locally on your device.</string>
+</resources>

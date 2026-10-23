@@ -1,0 +1,28 @@
+name: Android platform checks (no ROM)
+
+on:
+  push:
+    branches: [android-port]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  storage-root:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Test app-private settings and save paths
+        run: python3 scripts/port/test_android_root.py
+      - name: Test Android audio negotiation and lifecycle helpers
+        run: python3 scripts/port/test_android_audio.py
+      - name: Test touch JNI state publication
+        run: python3 scripts/port/test_android_input.py
+      - name: Test atomic settings and EEPROM replacement
+        run: python3 scripts/port/test_atomic_file.py
+      - name: Test host and Android libc headers
+        run: python3 scripts/port/test_android_headers.py
+      - name: Compile-check the ARM64 Android entry point
+        run: python3 scripts/port/check_android_entry.py

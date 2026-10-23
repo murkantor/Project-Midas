@@ -31,7 +31,12 @@
 
 #include <SDL.h>
 #include "port_console.h" /* the tilde console: fixed keys feed it below */
+#ifdef __ANDROID__
+#include "input_android.h"
+#include "port_android_audio.h"
+#endif
 static const char *inputDevRecPath(const char *id);   /* per-device records, below */
+extern s32 portInputDeviceIniKey(s32 dev, const char *name, char *buf, s32 len);
 
 #define INPUT_MAX_PADS 4
 
@@ -557,6 +562,48 @@ static int s_PadHasRumble[INPUT_MAX_PADS];
  * the slot is occupied. */
 static SDL_JoystickID s_PadInstance[INPUT_MAX_PADS];
 
+#ifdef __ANDROID__
+static int inputSlotBusy(int slot);
+/* The touch virtual pad is only a normal player slot when player 1 is free.
+ * If a physical pad already owns slot 0 it stays UNCLAIMED and its state is
+ * merged into slot 0 after the real pad (inputAndroidTouchSupplement), so
+ * touching the overlay never displaces the pad in the player's hands. */
+static int inputAndroidVirtualSlot(void)
+{
+    const int v = portAndroidInputVirtualDeviceIndex();
+    const SDL_JoystickID inst = (v >= 0) ? SDL_JoystickGetDeviceInstanceID(v) : -1;
+    int slot;
+
+    if (v < 0 || inst < 0)
+    {
+        return -1;
+    }
+    for (slot = 0; slot < INPUT_MAX_PADS; slot++)
+    {
+        if (inputSlotBusy(slot) && s_PadInstance[slot] == inst)
+        {
+            return slot;
+        }
+    }
+    return -1;
+}
+
+static int inputAndroidIsVirtual(int jidx)
+{
+    return jidx >= 0 && jidx == portAndroidInputVirtualDeviceIndex();
+}
+
+/** Touch is a supplemental source for player 1, not a player slot. */
+static int inputAndroidTouchSupplemental(void)
+{
+    if (portAndroidInputVirtualDeviceIndex() < 0 || inputAndroidVirtualSlot() >= 0)
+    {
+        return 0;
+    }
+    return inputSlotBusy(0);
+}
+#endif
+
 static int inputSlotBusy(int slot)
 {
     return s_Pads[slot] != NULL || s_Joys[slot] != NULL || s_PadRaphnet[slot] != 0;
@@ -1033,6 +1080,12 @@ static void inputP1ClaimPoll(int slot)
     {
         return;
     }
+#ifdef __ANDROID__
+    if (inputAndroidVirtualSlot() == slot)
+    {
+        return;   /* touch must never take player 1 away from a pad */
+    }
+#endif
     if (!inputSlotAnyButtonDown(slot))
     {
         return;
@@ -1619,6 +1672,26 @@ static void inputAssignSlotsEx(int full)
             {
                 continue;
             }
+#ifdef __ANDROID__
+            if (inputAndroidIsVirtual(jidx))
+            {
+                int physical, waiting = 0;
+                for (physical = 0; physical < njoys; physical++)
+                {
+                    if (!claimed[physical] && !inputAndroidIsVirtual(physical)
+                        && inputDeviceIsGameInput(physical))
+                    {
+                        waiting = 1;
+                        break;
+                    }
+                }
+                if (waiting) continue; /* physical player 1 wins regardless of enumeration order */
+            }
+            if (inputAndroidIsVirtual(jidx) && inputAndroidTouchSupplemental())
+            {
+                continue;   /* merged into player 1 by portInputPadGadgetChord */
+            }
+#endif
             for (slot = 0; slot < INPUT_MAX_PADS; slot++)
             {
                 if (s_Pads[slot] == NULL && s_Joys[slot] == NULL && s_PadRaphnet[slot] == 0
@@ -1649,6 +1722,39 @@ static void inputAssignSlotsEx(int full)
         }
     }
 }
+
+#ifdef __ANDROID__
+/** input_android.c is about to attach/detach the virtual pad: refill empty slots. */
+void portAndroidInputDevicesChanged(void)
+{
+    inputAssignSlotsEx(0);
+}
+
+/** Close the player slot holding the touch pad before SDL closes its handles. */
+void portAndroidInputForgetVirtual(void)
+{
+    const int v = portAndroidInputVirtualDeviceIndex();
+    const SDL_JoystickID inst = (v >= 0) ? SDL_JoystickGetDeviceInstanceID(v) : -1;
+    int slot;
+
+    if (v < 0 || inst < 0)
+    {
+        return;
+    }
+    for (slot = 0; slot < INPUT_MAX_PADS; slot++)
+    {
+        if ((s_Pads[slot] != NULL || s_Joys[slot] != NULL) && s_PadInstance[slot] == inst)
+        {
+            inputCloseController(slot);
+        }
+    }
+}
+
+int portAndroidInputVirtualInSlot(void)
+{
+    return inputAndroidVirtualSlot() >= 0;
+}
+#endif
 
 /* one line per topology change: who holds which slot right now */
 static void inputLogSlots(const char *why)
@@ -1881,6 +1987,32 @@ static int inputEventWatch(void *userdata, SDL_Event *event)
 {
     (void)userdata;
 
+#ifdef __ANDROID__
+    /* One central place for the Android app lifecycle: audio pause/resume and
+     * route changes, option-hold flush, and dropping touch state when the
+     * activity goes away or loses focus. */
+    portAndroidAudioQueueEvent(event);
+    switch (event->type)
+    {
+    case SDL_APP_WILLENTERBACKGROUND:
+        portAndroidInputReset();
+        break;
+    case SDL_APP_DIDENTERBACKGROUND:
+        portAndroidInputReset();
+        break;
+    case SDL_APP_TERMINATING:
+        portAndroidInputReset();
+        break;
+    default:
+        if (event->type == SDL_WINDOWEVENT
+            && event->window.event == SDL_WINDOWEVENT_FOCUS_LOST)
+        {
+            portAndroidInputReset();
+        }
+        break;
+    }
+#endif
+
     /* JOYDEVICE* fires for every stick (CONTROLLERDEVICE* only for mapped
      * ones), so it drives the slot reassign. ADDED also fires for devices
      * present at init; the reassign is idempotent,
@@ -1888,6 +2020,14 @@ static int inputEventWatch(void *userdata, SDL_Event *event)
     switch (event->type)
     {
     case SDL_JOYDEVICEADDED:
+#ifdef __ANDROID__
+        if (!inputAndroidIsVirtual(event->jdevice.which)
+            && inputDeviceIsGameInput(event->jdevice.which)
+            && inputAndroidVirtualSlot() == 0)
+        {
+            inputCloseController(0); /* turn touch into a supplement to the newly connected pad */
+        }
+#endif
         /* fill EMPTY slots only - a device arriving (or waking) must never
          * renumber players already in a match */
         {
@@ -1954,6 +2094,11 @@ static int inputEventWatch(void *userdata, SDL_Event *event)
             }
         }
         break;
+#ifdef __ANDROID__
+    case SDL_QUIT:
+        portAndroidInputShutdown();   /* release virtual pad before SDL quits */
+        break;
+#endif
     default:
         break;
     }
@@ -2142,6 +2287,11 @@ void portInputInit(void)
     inputAssignSlotsEx(1);
 
     SDL_AddEventWatch(inputEventWatch, NULL);
+
+#ifdef __ANDROID__
+    portAndroidInputInit();
+    atexit(portAndroidInputShutdown);   /* a normal exit without SDL_QUIT */
+#endif
 }
 
 /**
@@ -7508,9 +7658,297 @@ static void inputRaphnetRecheck(void)
  */
 void portInputPollTick(void)
 {
+#ifdef __ANDROID__
+    portAndroidInputPump();          /* touch virtual pad: attach/update/detach */
+#endif
     inputRaphnetRecheck();          /* a raphnet pad with no player gets one */
     inputP1DeviceSettingsCheck();   /* a different device is player 1: its own settings */
 }
+
+#ifdef __ANDROID__
+/* ---- touch supplement for player 1 --------------------------------------
+ * When a physical pad already owns slot 0, the virtual touch pad is kept out
+ * of the player slots (inputAndroidTouchSupplemental) and merged here instead.
+ * It uses the same standard layout as any other pad, just evaluated against
+ * the virtual SDL controller, so deadzones, twin-stick and Port actions all
+ * follow the normal code.  Runs from portInputPadGadgetChord after the real
+ * pad merge, which is the only point where that merge has no early returns.
+ */
+static PadMapEntry s_TouchMap[PM_COUNT];
+static PadMapEntry s_TouchMapAlt[PM_COUNT][PM_MAX_ALT];
+static int s_TouchMapReady;
+static SDL_GameController *s_TouchMapFrom;
+
+static void inputTouchMapToken(int i, const char *value)
+{
+    char buf[96];
+    char *tok;
+    char *next;
+    int n = 0;
+
+    SDL_strlcpy(buf, value, sizeof(buf));
+    s_TouchMap[i].kind = 0;
+    {
+        int a;
+        for (a = 0; a < PM_MAX_ALT; a++)
+        {
+            s_TouchMapAlt[i][a].kind = 0;
+        }
+    }
+    for (tok = buf; tok != NULL; tok = next)
+    {
+        PadMapEntry e;
+        size_t len;
+
+        next = SDL_strchr(tok, ',');
+        if (next != NULL)
+        {
+            *next++ = '\0';
+        }
+        while (*tok == ' ')
+        {
+            tok++;
+        }
+        len = SDL_strlen(tok);
+        while (len > 0 && (tok[len - 1] == ' ' || tok[len - 1] == '\t'))
+        {
+            tok[--len] = '\0';
+        }
+        if (*tok == '\0' || tok[0] == '-' || !inputParseMapToken(tok, &e))
+        {
+            continue;
+        }
+        if (n == 0)
+        {
+            s_TouchMap[i] = e;
+        }
+        else if (n - 1 < PM_MAX_ALT)
+        {
+            s_TouchMapAlt[i][n - 1] = e;
+        }
+        n++;
+    }
+}
+
+static void inputTouchMapPrepare(void)
+{
+    SDL_GameController *gc = portAndroidInputVirtualController();
+    char tok[PM_COUNT][16];
+    int i;
+
+    if (gc == NULL)
+    {
+        s_TouchMapReady = 0;
+        s_TouchMapFrom = NULL;
+        return;
+    }
+    if (gc == s_TouchMapFrom && s_TouchMapReady)
+    {
+        return;
+    }
+    inputDefaultTokens(gc, tok);
+    for (i = 0; i < PM_COUNT; i++)
+    {
+        inputTouchMapToken(i, tok[i]);
+    }
+    /* a standard pad leaves watch objectives unbound; the overlay has a Back
+     * button, so use it there (matches the Pro layout's back binding) */
+    if (s_TouchMap[PM_PORT_FIRST + 13].kind == 0)
+    {
+        inputTouchMapToken(PM_PORT_FIRST + 13, "b4");
+    }
+    s_TouchMapReady = 1;
+    s_TouchMapFrom = gc;
+}
+
+/* The virtual pad's axes 4/5 are its triggers (see android_input.c). */
+static int inputTouchEntryDown(const PadMapEntry *e)
+{
+    s32 v;
+
+    switch (e->kind)
+    {
+    case 'b':
+        return e->idx >= 0 && e->idx < 16
+            && (portAndroidInputButtonMask() & (1u << e->idx)) != 0;
+    case 'a':
+        if (e->idx < 0 || e->idx > 5)
+        {
+            return 0;
+        }
+        v = portAndroidInputAxisValue(e->idx);
+        if (e->idx == 4 || e->idx == 5)
+        {
+            s32 pull = v + 32768;
+
+            if (e->dir < 0)
+            {
+                pull = 65535 - pull;
+            }
+            return pull * 32767 / 65535 > s_OptTrigThreshold;
+        }
+        return (e->dir > 0) ? (v > 0x4000) : (v < -0x4000);
+    case 'h':
+        return 0;
+    default:
+        return 0;
+    }
+}
+
+static int inputTouchControlDown(int i)
+{
+    int a;
+
+    if (inputTouchEntryDown(&s_TouchMap[i]))
+    {
+        return 1;
+    }
+    for (a = 0; a < PM_MAX_ALT; a++)
+    {
+        if (inputTouchEntryDown(&s_TouchMapAlt[i][a]))
+        {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void inputTouchAxis(int i, s32 *out)
+{
+    const PadMapEntry *e = &s_TouchMap[i];
+    s32 v;
+
+    *out = 0;
+    if (e->kind != 'a' || e->idx < 0 || e->idx > 5)
+    {
+        return;
+    }
+    v = portAndroidInputAxisValue(e->idx);
+    if (e->dir < 0)
+    {
+        v = -v;
+    }
+    *out = inputAxisScale(v);
+}
+
+static void inputAndroidTouchSupplement(OSContPad *pad)
+{
+    u16 jb = 0;
+    s32 mx = 0, my = 0, lx = 0, ly = 0;
+    s32 dmove[2] = { 0, 0 };
+    s32 dlook[2] = { 0, 0 };
+    int haslook = 0;
+    int i;
+
+    if (!inputAndroidTouchSupplemental() || pad == NULL)
+    {
+        return;
+    }
+    if (inputPadCaptureBlanks(0) || portInputAssignActive() || inputPadBlankHeld(0))
+    {
+        return;
+    }
+    {
+        extern s32 portBindCooldownActive(void);
+
+        if (portBindCooldownActive())
+        {
+            return;
+        }
+    }
+    inputTouchMapPrepare();
+    if (!s_TouchMapReady)
+    {
+        return;
+    }
+    {
+        static int said;
+
+        if (!said)
+        {
+            said = 1;
+            portConLogf("ge: input: touch merged into player 1 (a physical pad owns the slot)\n");
+        }
+    }
+
+    for (i = 0; i < PM_STICK_X; i++)
+    {
+        if (inputTouchControlDown(i))
+        {
+            jb |= sPadMapMask[i];
+        }
+    }
+    jb &= (u16) ~inputPortModeN64Drop(0);
+    pad->button |= jb;
+
+    for (i = PM_MOVE_UP; i <= PM_PORT_LAST; i++)
+    {
+        if (!inputTouchControlDown(i))
+        {
+            continue;
+        }
+        switch (i)
+        {
+        case PM_MOVE_UP:    dmove[1] = 85;  break;
+        case PM_MOVE_DOWN:  dmove[1] = -85; break;
+        case PM_MOVE_LEFT:  dmove[0] = -85; break;
+        case PM_MOVE_RIGHT: dmove[0] = 85;  break;
+        case PM_LOOK_UP:    dlook[1] = 85;  break;
+        case PM_LOOK_DOWN:  dlook[1] = -85; break;
+        case PM_LOOK_LEFT:  dlook[0] = -85; break;
+        case PM_LOOK_RIGHT: dlook[0] = 85;  break;
+        default:
+            if (i >= PM_PORT_FIRST)
+            {
+                portJoyPortPadDown(0, i - PM_PORT_FIRST);
+            }
+            break;
+        }
+    }
+
+    inputTouchAxis(PM_STICK_X, &mx);
+    inputTouchAxis(PM_STICK_Y, &my);
+    mx = mx * 85 / 32768;
+    my = my * 85 / 32768;
+    inputCircleToOctagon(&mx, &my);
+    if (dmove[0] != 0) mx = dmove[0];
+    if (dmove[1] != 0) my = dmove[1];
+    if (dmove[0] != 0 || dmove[1] != 0)
+    {
+        s_PadDigMove[0][0] = (s8) ((dmove[0] > 0) - (dmove[0] < 0));
+        s_PadDigMove[0][1] = (s8) ((dmove[1] > 0) - (dmove[1] < 0));
+    }
+    if ((s32) mx * mx + (s32) my * my
+        > (s32) pad->stick_x * pad->stick_x + (s32) pad->stick_y * pad->stick_y)
+    {
+        pad->stick_x = (s8) mx;
+        pad->stick_y = (s8) my;
+    }
+
+    if (s_TouchMap[PM_LOOK_X].kind == 'a')
+    {
+        inputTouchAxis(PM_LOOK_X, &lx);
+        lx = lx * 85 / 32768;
+        haslook = 1;
+    }
+    if (s_TouchMap[PM_LOOK_Y].kind == 'a')
+    {
+        inputTouchAxis(PM_LOOK_Y, &ly);
+        ly = ly * 85 / 32768;
+        haslook = 1;
+    }
+    if (dlook[0] != 0) { lx = dlook[0]; haslook = 1; }
+    if (dlook[1] != 0) { ly = dlook[1]; haslook = 1; }
+    if (haslook && (!s_PadHasRight[0]
+        || (s32) lx * lx + (s32) ly * ly
+            > (s32) s_PadRightX[0] * s_PadRightX[0] + (s32) s_PadRightY[0] * s_PadRightY[0]))
+    {
+        s_PadRightX[0] = (s8) lx;
+        s_PadRightY[0] = (s8) ly;
+        s_PadHasRight[0] = 1;
+    }
+}
+#endif
 
 void portInputPadMerge(s32 idx, OSContPad *pad)
 {
@@ -8111,6 +8549,12 @@ void portInputPadGadgetChord(s32 idx, OSContPad *pad)
     {
         return;
     }
+#ifdef __ANDROID__
+    if (idx == 0)
+    {
+        inputAndroidTouchSupplement(pad);   /* touch merged over the real pad */
+    }
+#endif
     b = pad->button;
     prev = s_ChordPrevBtn[idx];
     s_ChordPrevBtn[idx] = b;

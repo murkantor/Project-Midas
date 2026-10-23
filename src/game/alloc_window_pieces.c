@@ -3,6 +3,8 @@
 #include <memp.h>
 #include "alloc_window_pieces.h"
 #include "glass.h"
+#include "lv.h"
+#include "player.h"
 
 
 

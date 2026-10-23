@@ -29,10 +29,14 @@
 #endif
 #include "game/frametiming.h"   /* portTickSetHz: [display] tickhz */
 #include "romdata.h"            /* romdataIsIniKey: [data] keys are not "unknown controls" */
+#include "port_atomic_file.h"   /* same-dir temp + fsync + rename for settings */
 
 /* port_console.c: same output as the fprintf(stderr, ...) this replaced,
  * plus a silent copy in the tilde console ring (spec section 7). */
 extern void portConLogf(const char *fmt, ...);
+extern s32 portIniWriteStrs(const char *section, const char *const *keys,
+                          const char *const *vals, s32 n);
+extern s32 portVideoIniSetKey(const char *key, const char *value);
 
 static bool s_VideoInitDone = false;
 
@@ -2151,13 +2155,16 @@ static void iniParseKeys(int bind, char *value)
 
 static void videoWriteDefaultIni(void)
 {
-    extern FILE *portRootFopen(const char *name, const char *mode);
-    FILE *f = portRootFopen("midas.ini", "w");
+    extern const char *portRootPath(const char *name);
+    PortAtomicFile af;
+    FILE *f;
 
-    if (f == NULL)
+    portAtomicFileInit(&af);
+    if (!portAtomicFileOpen(&af, portRootPath("midas.ini"), 0))
     {
         return; /* read-only install dir: code defaults still apply */
     }
+    f = portAtomicFileStream(&af);
     /* no [controls]: keyboard and mouse binds live in Data/Devices/kbm.gedevice */
     fprintf(f, "[input]\n");
     /* always_walk is retired (binds replace it):
@@ -2287,7 +2294,13 @@ static void videoWriteDefaultIni(void)
     fprintf(f, "mp_friendly_fire=%d\n", s_CfgMpFriendlyFire);
     fprintf(f, "head_roll=%d\n", s_CfgNoHeadRoll == 0);
     fprintf(f, "p1_ends_match=%d\n", s_CfgMpP1EndsMatch);
-    fclose(f);
+    if (ferror(f) || !portAtomicFileCommit(&af))
+    {
+        portConLogf("ge: midas.ini: could not write the default file (%s, errno %d)\n",
+                    portAtomicFileStageName(portAtomicFileStage(&af)), portAtomicFileError(&af));
+        portAtomicFileAbort(&af);
+        return;
+    }
     printf("ge: wrote default midas.ini\n");
 }
 
@@ -2530,6 +2543,7 @@ s32 portVideoIniFresh(void)
 static int videoIniWriteKeys(const char *section, const char *const *keys, const char *const *vals, int n, int create)
 {
     extern FILE *portRootFopen(const char *name, const char *mode);
+    extern const char *portRootPath(const char *name);
     int seen[VIDEO_INI_MAX_KEYS];
     char **lines;
     int nlines = 0;
@@ -2714,32 +2728,46 @@ static int videoIniWriteKeys(const char *section, const char *const *keys, const
         }
         if (hadsection)
         {
-            f = portRootFopen("midas.ini", "w");
-            if (f != NULL)
-            {
-                int ok = 1;
+            /* Same-directory atomic replace: a kill or full disk mid-write
+             * leaves the previous midas.ini in place instead of truncating it. */
+            PortAtomicFile af;
+            FILE *out;
+            int ok = 1;
 
+            portAtomicFileInit(&af);
+            if (!portAtomicFileOpen(&af, portRootPath("midas.ini"), 0))
+            {
+                portConLogf("ge: midas.ini: cannot create a replacement (%s, errno %d) - original kept\n",
+                            portAtomicFileStageName(portAtomicFileStage(&af)), portAtomicFileError(&af));
+            }
+            else
+            {
+                s_IniSeen = 1;
+                out = portAtomicFileStream(&af);
                 for (i = 0; i < nlines; i++)
                 {
-                    if (fputs(lines[i], f) < 0)
+                    if (fputs(lines[i], out) < 0)
                     {
                         ok = 0;
                     }
                 }
-                if (ferror(f))
+                if (ferror(out))
                 {
                     ok = 0;
                 }
-                if (fclose(f) != 0)
-                {
-                    ok = 0;
-                }
-                /* a failed write (full disk) is not "saved" */
-                written = ok;
-                s_IniSeen = 1;
                 if (!ok)
                 {
-                    portConLogf("ge: midas.ini: WRITE FAILED - the file may be incomplete\n");
+                    portAtomicFileAbort(&af);
+                    portConLogf("ge: midas.ini: WRITE FAILED - original kept\n");
+                }
+                else if (!portAtomicFileCommit(&af))
+                {
+                    portConLogf("ge: midas.ini: WRITE FAILED (%s, errno %d) - original kept\n",
+                                portAtomicFileStageName(portAtomicFileStage(&af)), portAtomicFileError(&af));
+                }
+                else
+                {
+                    written = 1; /* a failed write (full disk) is not "saved" */
                 }
             }
         }
@@ -2777,6 +2805,20 @@ s32 portIniWriteStrs(const char *section, const char *const *keys, const char *c
         return 1;
     }
     return 0;
+}
+
+/**
+ * Lifecycle handoff (Android onPause, or any host that may be killed without
+ * atexit): flush a held Port Options analog ramp through the existing API.
+ * portOptSaveHold(0) is the same release the menus use; it writes only when a
+ * hold is actually active. Every other option step already saves immediately.
+ * Do not call from a signal handler: it allocates and writes files.
+ */
+void portVideoFlushSettings(void)
+{
+    extern void portOptSaveHold(s32 on);
+
+    portOptSaveHold(0);
 }
 
 /* ---- Keyboard and mouse binds: Data/Devices/kbm.gedevice [binds] ----------
@@ -2856,27 +2898,42 @@ static int videoKbmBindsSave(void)
         }
         fclose(f);
     }
-    f = fopen(path, "w");
-    if (f == NULL)
     {
-        portConLogf("ge: devices: cannot write %s\n", path);
-        for (i = 0; i < nlines; i++) SDL_free(lines[i]);
-        return 0;
-    }
-    if (nlines == 0)
-    {
-        portInputDevRecHeader(f, "kbm");
-    }
-    for (i = 0; i < nlines; i++)
-    {
-        fputs(lines[i], f);
-        SDL_free(lines[i]);
-    }
-    portVideoKbmBindsAppend(f);
-    if (ferror(f) | fclose(f))
-    {
-        portConLogf("ge: devices: writing %s failed\n", path);
-        return 0;
+        PortAtomicFile af;
+        FILE *out;
+
+        portAtomicFileInit(&af);
+        if (!portAtomicFileOpen(&af, path, 0))
+        {
+            portConLogf("ge: devices: cannot write %s (%s, errno %d)\n", path,
+                        portAtomicFileStageName(portAtomicFileStage(&af)), portAtomicFileError(&af));
+            for (i = 0; i < nlines; i++) SDL_free(lines[i]);
+            return 0;
+        }
+        out = portAtomicFileStream(&af);
+        if (nlines == 0)
+        {
+            portInputDevRecHeader(out, "kbm");
+        }
+        for (i = 0; i < nlines; i++)
+        {
+            fputs(lines[i], out);
+            SDL_free(lines[i]);
+        }
+        portVideoKbmBindsAppend(out);
+        if (ferror(out))
+        {
+            portAtomicFileAbort(&af);
+            portConLogf("ge: devices: writing %s failed - original kept\n", path);
+            return 0;
+        }
+        if (!portAtomicFileCommit(&af))
+        {
+            portConLogf("ge: devices: writing %s failed (%s, errno %d) - original kept\n", path,
+                        portAtomicFileStageName(portAtomicFileStage(&af)), portAtomicFileError(&af));
+            portAtomicFileAbort(&af);
+            return 0;
+        }
     }
     return 1;
 }
@@ -2952,6 +3009,7 @@ static int videoKbmBindsLoad(int *moveUpgraded)
 static void videoIniDropSection(const char *section)
 {
     extern FILE *portRootFopen(const char *name, const char *mode);
+    extern const char *portRootPath(const char *name);
     char line[256];
     char **lines;
     int nlines = 0;
@@ -2997,14 +3055,38 @@ static void videoIniDropSection(const char *section)
         SDL_free(lines[0]);
         SDL_memmove(lines, lines + 1, (size_t) --nlines * sizeof(char *));
     }
-    f = portRootFopen("midas.ini", "w");
-    if (f != NULL)
     {
-        for (i = 0; i < nlines; i++)
+        PortAtomicFile af;
+
+        portAtomicFileInit(&af);
+        if (portAtomicFileOpen(&af, portRootPath("midas.ini"), 0))
         {
-            fputs(lines[i], f);
+            FILE *out = portAtomicFileStream(&af);
+            int ok = 1;
+
+            for (i = 0; i < nlines; i++)
+            {
+                if (fputs(lines[i], out) < 0)
+                {
+                    ok = 0;
+                }
+            }
+            if (ferror(out))
+            {
+                ok = 0;
+            }
+            if (!ok)
+            {
+                portAtomicFileAbort(&af);
+                portConLogf("ge: midas.ini: could not drop %s - original kept\n", section);
+            }
+            else if (!portAtomicFileCommit(&af))
+            {
+                portConLogf("ge: midas.ini: could not drop %s (%s, errno %d) - original kept\n",
+                            section, portAtomicFileStageName(portAtomicFileStage(&af)),
+                            portAtomicFileError(&af));
+            }
         }
-        fclose(f);
     }
     for (i = 0; i < nlines; i++) SDL_free(lines[i]);
     SDL_free(lines);

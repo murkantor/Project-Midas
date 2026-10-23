@@ -1,4 +1,10 @@
 
+/* Hosted C++: this N64 shim shadows the toolchain's <math.h> via -Iinclude,
+ * which breaks libc++'s <cmath> (it expects its own wrapper first). Chain to
+ * the real header for C++ only; the C game keeps the minimal declarations. */
+#if !defined(TARGET_N64) && defined(__cplusplus)
+#include_next <math.h>
+#endif
 
 #ifndef _MATH_EXT_H_
 #define _MATH_EXT_H_
@@ -58,7 +64,9 @@
 /*
  The difference between 1.0 and the next larger floating point number
 */
+#ifndef FLT_EPSILON
 #define FLT_EPSILON       1.19209290E-07F
+#endif
 
 /*Inline Math Funcs*/
 
