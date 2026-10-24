@@ -47,7 +47,7 @@ void modelmgrAllocateModelSlots(s32 numobjs)
         }
         else
         {
-            g_ModelSlots[i].unk10 = mempAllocBytesInBank(MODEL_SPARE_RWDATALEN * sizeof(u32), MEMPOOL_STAGE);
+            g_ModelSlots[i].unk10 = mempAllocBytesInBank(MODEL_SPARE_RWDATALEN * sizeof(void *), MEMPOOL_STAGE);
             g_ModelSlots[i].unk02 = MODEL_SPARE_RWDATALEN;
         }
     }
@@ -78,7 +78,7 @@ void modelmgrAllocateAnimModelSlots(s32 numanimated)
         }
         else
         {
-            g_AnimModelSlots[i].unk10 = mempAllocBytesInBank(ANIM_MODEL_SPARE_RWDATALEN * sizeof(u32), MEMPOOL_STAGE);
+            g_AnimModelSlots[i].unk10 = mempAllocBytesInBank(ANIM_MODEL_SPARE_RWDATALEN * sizeof(void *), MEMPOOL_STAGE);
             g_AnimModelSlots[i].unk02 = ANIM_MODEL_SPARE_RWDATALEN;
         }
     }

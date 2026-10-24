@@ -1,4 +1,8 @@
 #include <ultra64.h>
+#include "game/othermodemicrocode.h"
+#include "game/propobj.h"
+#include "game/bondview.h"
+#include "game/dyn.h"
 #include <limits.h>
 #include <music.h>
 #include "glass.h"
@@ -320,8 +324,8 @@ Gfx *glassRenderShards(Gfx *gdl)
     #undef WINDOW_PIECE
 
     gSPClearGeometryMode(gdl++, G_LIGHTING | G_TEXTURE_GEN);
-    gSPMatrix(gdl++, (u32)currentPlayerGetProjectionMatrix(), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_PROJECTION);
-    gSPMatrix(gdl++, (u32)currentPlayerGetMatrix10C8(), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
+    gSPMatrix(gdl++, (uintptr_t)currentPlayerGetProjectionMatrix(), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_PROJECTION);
+    gSPMatrix(gdl++, (uintptr_t)currentPlayerGetMatrix10C8(), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_MODELVIEW);
 
     return gdl;
 }

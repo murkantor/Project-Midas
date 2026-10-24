@@ -1,4 +1,5 @@
 #include <ultra64.h>
+#include "game/cheat.h"
 #include "math_atan2f.h"
 #include "textrelated.h"
 #include "front.h"

@@ -1,4 +1,5 @@
 #include <ultra64.h>
+#include "game/unk_092E50.h"
 #include "gbi_extension.h"
 #include "lightfixture.h"
 #include "lv.h"
@@ -835,7 +836,7 @@ s32 texLoadFromGdl(Gfx *src, s32 srcsize, Gfx *dst, void *texpool)
     s32 dbgSeen = 0, dbgFound = 0, dbgMissed = 0, dbgFirstMiss = -1;
 #endif
 
-    count = srcsize >> 3;
+    count = srcsize / sizeof(Gfx);
 
     sub_GAME_7F0CC4C8();
 
@@ -1159,7 +1160,7 @@ s32 texLoadFromGdl(Gfx *src, s32 srcsize, Gfx *dst, void *texpool)
         lightFixtureEntryEnd(out);
     }
 
-    return ((s32)out) - ((s32)dst);
+    return ((intptr_t)out) - ((intptr_t)dst);
 }
 
 
@@ -1168,6 +1169,15 @@ s32 texLoadFromGdl(Gfx *src, s32 srcsize, Gfx *dst, void *texpool)
 */
 void texCopyGdls(Gfx *arg0, Gfx *arg1, s32 arg2)
 {
+#ifdef GE_NATIVE_64
+    const u32 *raw = (const u32 *)arg0;
+    for (s32 i = arg2 / 8 - 1; i >= 0; i--) {
+        u32 w0 = raw[i * 2], w1 = raw[i * 2 + 1];
+        arg1[i].words.w0 = __builtin_bswap32(w0);
+        arg1[i].words.w1 = __builtin_bswap32(w1);
+    }
+    return;
+#endif
     arg2 = (arg2 >> 3);
     arg0 = arg0 + (arg2 - 1);
     arg1 = arg1 + (arg2 - 1);

@@ -16,6 +16,10 @@
 #include <direct.h>   /* _mkdir: portLogPath */
 #else
 #include <sys/stat.h> /* mkdir: portLogPath */
+#include <unistd.h>   /* readlink, dup2 */
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
 #endif
 
 /* port_console.c: same output as the fprintf(stderr, ...) this replaced,
@@ -582,10 +586,6 @@ void ge_dbg_gfxdump(const char *tag, void *gdl, int count)
  * launched from Explorer or a shell with any working directory. */
 static char sPortRootDir[1024]; /* with trailing separator; "" = cwd fallback */
 
-#ifndef _WIN32
-#include <unistd.h> /* readlink */
-#endif
-
 static void portInitRootDir(const char *argv0)
 {
     int last = -1;
@@ -598,6 +598,12 @@ static void portInitRootDir(const char *argv0)
         return;
     }
     (void) argv0;
+#elif defined(__APPLE__)
+    uint32_t size = sizeof(sPortRootDir);
+    if (_NSGetExecutablePath(sPortRootDir, &size) != 0) {
+        sPortRootDir[0] = '\0';
+        return;
+    }
 #else
     /* argv[0] is not authoritative on Linux (PATH launches have no slash,
      * launchers/symlinks point elsewhere), and a cwd fallback scattered

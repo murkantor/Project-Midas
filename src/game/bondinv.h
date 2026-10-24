@@ -28,4 +28,25 @@ s32 bondinvItemAvailableForHand(ITEM_IDS right, ITEM_IDS left);
 s32 bondinvItemAvailable(ITEM_IDS weaponid);
 void bondinvAddTextOverride(textoverride *override);
 
+u16 *bondinvGetFirstTitlebyIndex(s32 index);
+
+u16 *bondinvGetLongNameByIndex(s32 index);
+
+u16 *bondinvGetSecondTitlebyIndex(s32 index);
+
+u8 *bondinvGetActivatedTextObject(ObjectRecord *obj);
+
+u8 *bondinvGetActivatedTextWeapon(ITEM_IDS weaponnum);
+
+
+void bondinvDetermineEquippedItem(void);
+bool bondinvHasGEKey(void);
+void bondinvIncrementHeldTime(s32 weapon1, s32 weapon2);
+s32 bondinvGetTextbyInvIndex(s32 index);
+void bondinvSetCurEquippedItem(int current_item);
+int bondinvGetCurEquippedItem(void);
+int bondinvAddWeaponByProp(PropRecord *prop);
+int bondinvAddPropToInv(PropRecord *prop);
+bool bondinvCheckHasKeyFlags(u32 wantkeyflags);
+
 #endif

@@ -5,6 +5,6 @@
 
 
 u32 decompressdata(u8 *src, u8 *dst, struct huft *hlist);
-s32 rzipGetSomething(void);
+u8 *rzipGetSomething(void);
 
 #endif

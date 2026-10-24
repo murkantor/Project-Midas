@@ -17,4 +17,7 @@ void bossMemBarsFlagToggle(void);
 void bossRunTitleStage(void);
 void bossReturnTitleStage(void);
 
+
+void bossEntry(void);
+
 #endif

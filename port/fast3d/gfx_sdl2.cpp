@@ -245,8 +245,14 @@ static void set_fullscreen(bool on, bool call_callback) {
         }
         SDL_SetWindowFullscreen(wnd, on ? fullscreen_flag : 0);
     } else {
+#ifdef __APPLE__
+        /* Cocoa must own desktop fullscreen so it hides the menu bar and Dock
+         * and restores them when the window loses fullscreen. */
+        SDL_SetWindowFullscreen(wnd, on ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+#else
         SDL_SetWindowFullscreen(wnd, 0);
         set_borderless_fullscreen(on);
+#endif
     }
     if (call_callback && on_fullscreen_changed_callback) {
         on_fullscreen_changed_callback(on);
@@ -345,6 +351,9 @@ static void gfx_sdl_init(const struct GfxWindowInitSettings *set) {
                 window_height = got.h;
             }
         } else {
+#ifdef __APPLE__
+            flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+#else
             // borderless window over the display (see set_borderless_fullscreen);
             // the remembered monitor first, display 0 as the fallback
             SDL_Rect r;
@@ -367,6 +376,7 @@ static void gfx_sdl_init(const struct GfxWindowInitSettings *set) {
                 flags = (flags & ~SDL_WINDOW_RESIZABLE) | SDL_WINDOW_BORDERLESS;
                 borderless_state = true;
             }
+#endif
         }
     }
 
@@ -392,7 +402,11 @@ static void gfx_sdl_init(const struct GfxWindowInitSettings *set) {
         { 2, 1, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY }, // 2.1: absolute last resort, will still require GLSL130 as an extension
     };
 
+#ifdef __APPLE__
+    u32 verstart = 2; /* macOS exposes modern OpenGL through core profiles. */
+#else
     u32 verstart = 1;
+#endif
     const u32 verend = sizeof(glver) / sizeof(*glver);
     const char *verstr = sysArgGetString("--gl-version");
     if (verstr && *verstr) {
@@ -686,7 +700,7 @@ static void gfx_sdl_handle_events(void) {
                         const char *v = (const char *) glGetString(GL_VENDOR);
                         GLenum err = glGetError();
 
-                        if (first_renderer[0] == ' ' && r) {
+                        if (first_renderer[0] == '\0' && r) {
                             SDL_strlcpy(first_renderer, r, sizeof(first_renderer));
                         }
                         fprintf(stderr,

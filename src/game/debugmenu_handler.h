@@ -49,4 +49,12 @@ Gfx * debugmenuRender(Gfx *);
 s32 debug_menu_processor(s8 stick_h, s8 stick_v, u16 button_held, u16 button_pressed);
 void debugmenuUpdate(void);
 
+
+void debmenuSetMenu(char **labels, s32 (*positions)[2], s32 *offsets);
+s32 get_highlighted_debug_option(void);
+void gotoLeftDebugOption(void);
+void gotoRightDebugOption(void);
+void gotoAboveDebugOption(void);
+void gotoBelowDebugOption(void);
+
 #endif

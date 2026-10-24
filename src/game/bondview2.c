@@ -1,4 +1,14 @@
+#ifndef TARGET_N64
+#include "port_input.h"
+#include "port_audio_stats.h"
+#endif
 #include <ultra64.h>
+#include "game/bgfog.h"
+#include "game/ob.h"
+#include "game/ramromreplay.h"
+#include "radar.h"
+#include "game/dyn.h"
+void bondviewKillCurrentPlayer(void);
 #include <math.h>
 #include <bondtypes.h>
 #include <boss.h>
@@ -371,7 +381,7 @@ void solo_char_load(void)
     s32                         cursor;
     s32                         size0;
     s32                         size1;
-    s32                         helddst;
+    intptr_t                         helddst;
     WeaponObjRecord             weapon;
     struct player             **pp;
     s32                         prop;
@@ -556,7 +566,7 @@ void solo_char_load(void)
                 load_object_fill_header(headheader, (u8 *)c_item_entries[head].filename, weaponbuf0 + cursor, size0 - cursor, &pool);
                 cursor = ALIGN64_V3(get_pc_buffer_remaining_value((u8 *)c_item_entries[head].filename) + cursor + 0x3f);
                 model  = (Model *)(weaponbuf0 + cursor);
-                cursor = ALIGN64_V3(cursor + 0xfb);
+                cursor = ALIGN64_V3(cursor + sizeof(Model) + 0x3f);
                 modelCalculateRwDataLen(bodyheader);
                 modelCalculateRwDataLen(headheader);
 
@@ -565,7 +575,7 @@ void solo_char_load(void)
                     s32  nrec;
                     animdata = (u32 *)(weaponbuf0 + cursor);
                     nrec     = (bodyheader->numRecords + headheader->numRecords) + 0xa;
-                    cursor   = ALIGN64_V3(cursor + (nrec << 2) + 0x3f);
+                    cursor   = ALIGN64_V3(cursor + nrec * sizeof(void *) + 0x3f);
                     animInit(model, bodyheader, animdata);
                     model->rwdatalen = nrec;
                 }
@@ -632,8 +642,8 @@ void solo_char_load(void)
             if (getPlayerCount() == 1)
             {
                 helddst      = cursor;
-                helddst      = ((s32)weaponbuf0) + helddst;
-                cursor       = ALIGN64_V3(cursor + 0xc7);
+                helddst      = ((intptr_t)weaponbuf0) + helddst;
+                cursor       = ALIGN64_V3(cursor + sizeof(WeaponObjRecord) + 0x3f);
                 pitemheader  = get_ptr_itemheader_in_hand(GUNLEFT);
                 *pitemheader = *PitemZ_entries[prop].header;
                 load_object_fill_header(pitemheader, (u8 *)PitemZ_entries[prop].filename, weaponbuf0 + cursor, size0 - cursor, &pool);
@@ -896,7 +906,7 @@ void bondviewSetCameraMode(s32 arg0)
             solo_char_load();
 
             // HACK: ptr_animation_table->data regalloc is backwards
-            sp38 = (struct ModelAnimation *)((s32)stage_intro_anim_table[g_IntroAnimationIndex].anonymous_0 + (s32)&ptr_animation_table->data);
+            sp38 = (struct ModelAnimation *)((s32)stage_intro_anim_table[g_IntroAnimationIndex].anonymous_0 + (intptr_t)&ptr_animation_table->data);
             sp78 = stage_intro_anim_table[g_IntroAnimationIndex].anonymous_2;
             ftemp_1 = stage_intro_anim_table[g_IntroAnimationIndex].anonymous_1;
             ftemp_3 = stage_intro_anim_table[g_IntroAnimationIndex].anonymous_3;
@@ -1249,7 +1259,7 @@ void bondviewCalcIntroSwirlCamera(s32 index, f32 time, coord3d *pos, coord3d *lo
         lookat->y = g_CurrentPlayer->field_3C8;
         lookat->z = g_CurrentPlayer->field_3CC;
 
-        swirl = (void *)(((u32) g_IntroSwirl) + (u32) base);
+        swirl = (void *)(((uintptr_t) g_IntroSwirl) + (uintptr_t) base);
 
         if (!(swirl->bitflags & 4))
         {
@@ -3324,7 +3334,7 @@ void bondviewCalcUpdatePlayerCollision(struct coord3d *offset, s32 allow_scoot)
             temp_f2 = (farr5[4] - farr5[3]) * obj->model->scale;
 
             if (g_PlayerIsInTank == 1
-                || (chrpropTestPointInPolygon(&g_CurrentPlayer->field_488.collision_position, &tank_objrecord->rect, (s32)tank_objrecord->collision) != 0))
+                || (chrpropTestPointInPolygon(&g_CurrentPlayer->field_488.collision_position, &tank_objrecord->rect, (intptr_t)tank_objrecord->collision) != 0))
             {
                 temp_f2 += (farr6[4] - farr6[3]) * obj->model->scale;
                 g_BondCanEnterTank = 1;
@@ -4129,10 +4139,10 @@ void sub_GAME_7F07E7CC(void) {
         return_null();
     }
 #endif
-    animInit((Model *)((u8 *)g_CurrentPlayer + 0x230), itemheader, (u32 *)((u8 *)g_CurrentPlayer + 0x2ec));
-    modelSetScale((Model *)((u8 *)g_CurrentPlayer + 0x230), c_item_entries[41].scale * 0.10000001f);
-    modelSetAnimation((Model *)((u8 *)g_CurrentPlayer + 0x230), (ModelAnimation *)&ptr_animation_table->data[PTR_ANIM_bond_watch], 0, 0.0f, 0.5f * bondviewWatchRate(), 0.0f);
-    *(s32 *)((u8 *)g_CurrentPlayer + 0x220) = 0;
+    animInit(WATCH_MODEL(g_CurrentPlayer), itemheader, WATCH_MODEL_DATA(g_CurrentPlayer));
+    modelSetScale(WATCH_MODEL(g_CurrentPlayer), c_item_entries[41].scale * 0.10000001f);
+    modelSetAnimation(WATCH_MODEL(g_CurrentPlayer), (ModelAnimation *)&ptr_animation_table->data[PTR_ANIM_bond_watch], 0, 0.0f, 0.5f * bondviewWatchRate(), 0.0f);
+    g_CurrentPlayer->step_in_view_watch_animation = 0;
 }
 
 
@@ -4150,7 +4160,7 @@ void bondviewSetPauseWatchRelated(f32 arg0)
     }
     else
     {
-        g_CurrentPlayer->pause_watch_related_scaled = (20.0f - g_CurrentPlayer->pause_watch_related_adjust) / arg0;
+        g_CurrentPlayer->pause_watch_related_scaled = (20.0f - WATCH_MODEL(g_CurrentPlayer)->animframe1) / arg0;
     }
 
     g_CurrentPlayer->step_in_view_watch_animation = 1;
@@ -4171,7 +4181,7 @@ void bondviewSetPauseWatchRelatedAlt(f32 arg0)
     }
     else
     {
-        g_CurrentPlayer->pause_watch_related_scaled = g_CurrentPlayer->pause_watch_related_adjust / arg0;
+        g_CurrentPlayer->pause_watch_related_scaled = WATCH_MODEL(g_CurrentPlayer)->animframe1 / arg0;
     }
 
     g_CurrentPlayer->step_in_view_watch_animation = 2;
@@ -4210,7 +4220,7 @@ void bondviewStepWatchAnimation(void)
             }
         }
 
-        modelSetAnimFrame2((void*)&g_CurrentPlayer->something_with_watch_object_instance, g_CurrentPlayer->pause_animation_counter, 0.0f);
+        modelSetAnimFrame2(WATCH_MODEL(g_CurrentPlayer), g_CurrentPlayer->pause_animation_counter, 0.0f);
     }
 }
 
@@ -4613,7 +4623,7 @@ void bondviewWatchAnimationTick(void)
 
                 if ((g_CurrentPlayer->step_in_view_watch_animation != 0) && (g_CurrentPlayer->step_in_view_watch_animation != 3))
                 {
-                    sp30 = ((20.0f - g_CurrentPlayer->pause_watch_related_adjust) * 40.0f) / 20.0f;
+                    sp30 = ((20.0f - WATCH_MODEL(g_CurrentPlayer)->animframe1) * 40.0f) / 20.0f;
                 }
 
                 if ((g_CurrentPlayer->pause_state == 0) || (g_CurrentPlayer->pause_state == 2) || (g_CurrentPlayer->pause_state == 3))
@@ -4737,7 +4747,7 @@ void bondviewWatchAnimationTick(void)
 
                 if ((g_CurrentPlayer->step_in_view_watch_animation != 0) && (g_CurrentPlayer->step_in_view_watch_animation != 3))
                 {
-                    sp28 = (g_CurrentPlayer->pause_watch_related_adjust * 40.0f) / 20.0f;
+                    sp28 = (WATCH_MODEL(g_CurrentPlayer)->animframe1 * 40.0f) / 20.0f;
                 }
 
                 sp20 = sp28 + 20.0f;
@@ -5499,7 +5509,7 @@ void bondviewMoveAnimationTick(f32 speed, f32 speedforwards, f32 speedsideways)
             // HACK: ptr_animation_table dereference addition is backwards.
             // this should be:
             // ptr_animation_table->data[g_bondviewBondDeathAnimations[((u32) randomGetNext() % (u32) g_bondviewBondDeathAnimationsCount)]]
-            bheadStartDeathAnimation((struct ModelAnimation *) ((s32)g_bondviewBondDeathAnimations[((u32) randomGetNext() % (u32) g_bondviewBondDeathAnimationsCount)] + (s32)&ptr_animation_table->data[0]), randomGetNext() & 1, 0.0f, 1.0f);
+            bheadStartDeathAnimation((struct ModelAnimation *) ((s32)g_bondviewBondDeathAnimations[((u32) randomGetNext() % (u32) g_bondviewBondDeathAnimationsCount)] + (intptr_t)&ptr_animation_table->data[0]), randomGetNext() & 1, 0.0f, 1.0f);
             g_CurrentPlayer->startnewbonddie = FALSE;
         }
 
@@ -10394,7 +10404,11 @@ void MoveBond(s8 stick_x, s8 stick_y, u16 buttons, u16 oldbuttons)
         f32 nd; // canonical name
         f32 ftemp_7;
         f32 sp240;
+#ifdef TARGET_N64
         struct move_bond_temp_struct curLocus;
+#else
+        struct StandTileLocusCallbackRecord curLocus;
+#endif
         struct move_bond_collision bondCollision;
         f32 shorten; // canonical name
         f32 headpos_x;
@@ -11615,7 +11629,7 @@ void bondviewUpdateCameraMatrices(coord3d* cam_pos, coord3d* cam_look_dir, coord
 	}
 
     guMtxF2L((f32 (*)[4]) &sp60, temp_s0);
-    set_BONDdata_field_10E0((s32) temp_s0);
+    set_BONDdata_field_10E0((intptr_t) temp_s0);
 
     scale = bgGetLevelVisibilityScale();
 
@@ -11628,7 +11642,7 @@ void bondviewUpdateCameraMatrices(coord3d* cam_pos, coord3d* cam_look_dir, coord
     currentPlayerSetMatrix10CC((Mtxf* ) g_CurrentPlayer->field_64);
     currentPlayerSetViewToWorldMtxf((Mtxf* ) g_CurrentPlayer->field_68);
 
-    sub_GAME_7F078464((s32) lookat);
+    sub_GAME_7F078464((intptr_t) lookat);
     bondviewUpdateFrustumPlanes();
     store_BONDdata_curpos_to_previous();
 }
@@ -11748,7 +11762,6 @@ void bondviewSelectCuff(Model *model, ModelFileHeader *header, s32 switchindex)
     ModelNode **switches;
     ModelNode **base;
     ModelNode *node;
-    s32 offset;
     s32 *rwdata;
     s32 index;
     s32 visible;
@@ -11756,24 +11769,22 @@ void bondviewSelectCuff(Model *model, ModelFileHeader *header, s32 switchindex)
 
     local = fileGetBondForCurrentFolder();
     switches = header->Switches;
-    offset = switchindex << 2;
 
     if (1);
 
-    // byte-indexed on purpose: offset = switchindex * 4. &switches[i] won't match.
-    base = (ModelNode **) (((u8 *) switches) + offset);
+    base = &switches[switchindex];
 
     if (base[0] != NULL)
     {
         rwdata = (s32 *) modelGetNodeRwData(model, base[0]);
         *rwdata = g_CurrentPlayer->bondtype == CUFF_BOILER;
         switches = header->Switches;
-        base = (ModelNode **) (((u8 *) switches) + offset);
+        base = &switches[switchindex];
     }
 
     index = switchindex + 1;
 
-    if (((void *) (index * 0)) != base[1])
+    if (base[1] != NULL)
     {
         node = switches[index];
         rwdata = (s32 *) modelGetNodeRwData(model, node);
@@ -11796,7 +11807,7 @@ void bondviewSelectCuff(Model *model, ModelFileHeader *header, s32 switchindex)
         }
         *rwdata = visible;
         switches = header->Switches;
-        base = (ModelNode **) (((u8 *) switches) + offset);
+        base = &switches[switchindex];
     }
 
     index = switchindex + 2;
@@ -11817,7 +11828,7 @@ void bondviewSelectCuff(Model *model, ModelFileHeader *header, s32 switchindex)
 
         *rwdata = visible;
         switches = header->Switches;
-        base = (ModelNode **) (((u8 *) switches) + offset);
+        base = &switches[switchindex];
     }
 
     index = switchindex + 3;
@@ -11827,17 +11838,17 @@ void bondviewSelectCuff(Model *model, ModelFileHeader *header, s32 switchindex)
         rwdata = (s32 *) modelGetNodeRwData(model, switches[index]);
         *rwdata = g_CurrentPlayer->bondtype == CUFF_BLUE;
         switches = header->Switches;
-        base = (ModelNode **) (((u8 *) switches) + offset);
+        base = &switches[switchindex];
     }
 
-    index = (switchindex + 4) ^ (((switchindex + 4) ^ 0) * 0);
+    index = switchindex + 4;
 
     if (base[4])
     {
         rwdata = (s32 *) modelGetNodeRwData(model, switches[index]);
         *rwdata = g_CurrentPlayer->bondtype == CUFF_JUNGLE;
         switches = header->Switches;
-        base = (ModelNode **) (((u8 *) switches) + offset);
+        base = &switches[switchindex];
     }
 
     index = switchindex + 5;
@@ -11902,7 +11913,7 @@ Gfx *bondviewRenderWatch(Gfx *gdl)
     watchpos = ZeroCoordWatchPos;
     objheader = get_ptr_itemheader_in_hand(GUNLEFT);
     nodepos = (f32 *) objheader->Switches[3];
-    rwdata = modelGetNodeRwData((Model *) (&g_CurrentPlayer->something_with_watch_object_instance), (ModelNode *) nodepos);
+    rwdata = modelGetNodeRwData(WATCH_MODEL(g_CurrentPlayer), (ModelNode *) nodepos);
     perspmtx = dynAllocateMatrix();
     {
         f32 waspect;
@@ -11925,7 +11936,7 @@ Gfx *bondviewRenderWatch(Gfx *gdl)
 #endif
     }
  
-    gSPMatrix(gdl++, OS_PHYSICAL_TO_K0((u32) perspmtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_PROJECTION);
+    gSPMatrix(gdl++, OS_PHYSICAL_TO_K0((uintptr_t) perspmtx), G_MTX_NOPUSH | G_MTX_LOAD | G_MTX_PROJECTION);
     gSPPerspNormalize(gdl++, perspNorm);
 
     // Keep this nested block for matching.
@@ -11959,22 +11970,22 @@ Gfx *bondviewRenderWatch(Gfx *gdl)
         matrix_4x4_set_position_and_rotation_around_y(watchpos.f, (360.0f - g_CurrentPlayer->vv_theta) * 0.017453292f, &watchmtx);
         matrix_4x4_multiply_homogeneous_in_place(camGetWorldToScreenMtxf(), &watchmtx);
         matrices = dynAllocate(objheader->numMatrices << 6);
-        bondviewSelectCuff((Model *) (&g_CurrentPlayer->something_with_watch_object_instance), objheader, 4);
+        bondviewSelectCuff(WATCH_MODEL(g_CurrentPlayer), objheader, 4);
         renderdata.basemtx = &watchmtx;
         renderdata.mtxlist = matrices;
-        subcalcmatrices(&renderdata, (Model *) (&g_CurrentPlayer->something_with_watch_object_instance));
+        subcalcmatrices(&renderdata, WATCH_MODEL(g_CurrentPlayer));
         nodepos = (f32 *) objheader->Switches[0]->Data;
         time = watch_time_0;
-        t = g_CurrentPlayer->pause_watch_related_adjust / 20.0f;
+        t = WATCH_MODEL(g_CurrentPlayer)->animframe1 / 20.0f;
     
         if (t > 1.0f)
         {
             t = 1.0f;
         }
     
-        targetpos.x = matrices->m[3][0] + (((g_CurrentPlayer->field_1D4 - (nodepos[0] * g_CurrentPlayer->watch_scale_destination)) - matrices->m[3][0]) * t);
-        targetpos.y = matrices->m[3][1] + (((g_CurrentPlayer->field_1D8 + (nodepos[2] * g_CurrentPlayer->watch_scale_destination)) - matrices->m[3][1]) * t);
-        targetpos.z = matrices->m[3][2] + (((g_CurrentPlayer->pause_watch_position - (nodepos[1] * g_CurrentPlayer->watch_scale_destination)) - matrices->m[3][2]) * t);
+        targetpos.x = matrices->m[3][0] + (((g_CurrentPlayer->field_1D4 - (nodepos[0] * WATCH_MODEL(g_CurrentPlayer)->scale)) - matrices->m[3][0]) * t);
+        targetpos.y = matrices->m[3][1] + (((g_CurrentPlayer->field_1D8 + (nodepos[2] * WATCH_MODEL(g_CurrentPlayer)->scale)) - matrices->m[3][1]) * t);
+        targetpos.z = matrices->m[3][2] + (((g_CurrentPlayer->pause_watch_position - (nodepos[1] * WATCH_MODEL(g_CurrentPlayer)->scale)) - matrices->m[3][2]) * t);
     
         matrix_4x4_set_basis_and_position_target(&targetmtx, 0.0f, 0.0f, 0.0f, g_CurrentPlayer->field_1E0, g_CurrentPlayer->field_1E4, g_CurrentPlayer->field_1E8, g_CurrentPlayer->field_1EC, g_CurrentPlayer->field_1F0, g_CurrentPlayer->field_1F4);
         matrix_4x4_get_rotation_around_xyz(matrices, &currot);
@@ -11985,7 +11996,7 @@ Gfx *bondviewRenderWatch(Gfx *gdl)
         quaternion_slerp(quat1, quat2, t, quat3);
         quaternion_to_matrix(quat3, matrices->m);
         matrix_4x4_set_position(&targetpos, matrices);
-        matrix_scalar_multiply(g_CurrentPlayer->watch_scale_destination, (f32 *) matrices);
+        matrix_scalar_multiply(WATCH_MODEL(g_CurrentPlayer)->scale, (f32 *) matrices);
         total_seconds = time / 60;
         seconds = total_seconds % 60;
         total_minutes = total_seconds / 60;
@@ -12031,7 +12042,7 @@ Gfx *bondviewRenderWatch(Gfx *gdl)
             renderdata.envcolour.word = g_CurrentPlayer->tileColor.a | (((g_CurrentPlayer->tileColor.r << 24) | (g_CurrentPlayer->tileColor.g << 16)) | (g_CurrentPlayer->tileColor.b << 8));
         }
     
-        subdraw(&renderdata, (Model *) (&g_CurrentPlayer->something_with_watch_object_instance));
+        subdraw(&renderdata, WATCH_MODEL(g_CurrentPlayer));
         gdl = renderdata.gdl;
         nodepos2 = (f32 *) objheader->Switches[2]->Data;
         finalmtx = dynAllocateMatrix();
@@ -12051,7 +12062,7 @@ Gfx *bondviewRenderWatch(Gfx *gdl)
         matrix_4x4_7F058C88();
         gdl = draw_watch_current_page(gdl, finalmtx, (g_CurrentPlayer->watch_animation_state == 5) || (g_CurrentPlayer->watch_animation_state == 12));
         matrix_4x4_7F058C64();
-        bondviewTransformManyPosToViewMatrix(g_CurrentPlayer->field_23C, objheader->numMatrices);
+        bondviewTransformManyPosToViewMatrix(WATCH_MODEL(g_CurrentPlayer)->render_pos, objheader->numMatrices);
         matrix_4x4_7F058C88();
     }
  
@@ -12240,7 +12251,7 @@ void mp_respawn_handler(void)
 {
     coord3d start_pos = ZeroCoordSpawnPos;
     f32 start_look_angle;
-    s32 start_stan;
+    StandTile *start_stan;
     s32 pad;
     f32 stan_height;
     s32 var_v0;
@@ -12355,7 +12366,7 @@ void mp_respawn_handler(void)
             switch (INTRO_TYPE(intro_record))
             {
                 case 0: // INTROTYPE_SPAWN
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroSpawn));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroSpawn));
                     break;
                 case 1: // INTROTYPE_ITEM
                     if (check_ramrom_flags() == ((struct SetupIntroAmmo*)intro_record)->is_demo_playback) {
@@ -12365,28 +12376,28 @@ void mp_respawn_handler(void)
                             bondinvAddInvItem(((struct SetupIntroItem*)intro_record)->item_right);
                         }
                     }
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroItem));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroItem));
                     break;
                 case 2: // INTROTYPE_AMMO
                     if (check_ramrom_flags() == ((struct SetupIntroAmmo*)intro_record)->is_demo_playback) {
                         give_cur_player_ammo(((struct SetupIntroAmmo*)intro_record)->ammo_type, ((struct SetupIntroAmmo*)intro_record)->ammo_amount);
                     }
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroAmmo));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroAmmo));
                     break;
                 case 3: // INTROTYPE_SWIRL
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroSwirl));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroSwirl));
                     break;
                 case 4: // INTROTYPE_ANIM
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroAnim));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroAnim));
                     break;
                 case 5: // INTROTYPE_CUFF
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroCuff));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroCuff));
                     break;
                 case 6: // INTROTYPE_CAMERA
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroCamera));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroCamera));
                     break;
                 default: // INTROTYPE_WATCH, INTROTYPE_CREDITS
-                    intro_record = (struct SetupIntroEmpty*)((s32)intro_record + sizeof(struct SetupIntroEmpty));
+                    intro_record = (struct SetupIntroEmpty*)((intptr_t)intro_record + sizeof(struct SetupIntroEmpty));
                     break;
             }
     #ifdef DEBUG
@@ -12649,28 +12660,140 @@ Gfx *bondviewRenderCredits(Gfx *gdl)
 /* The show_fps counter, drawn LAST in the frame by maybe_mp_interface so the
  * pause pillars can't cover it, and outside sub_GAME_7F08AAE8, whose top-text
  * branch skips its overlays and made the counter blink. */
+
+/* One small-font row. The other corner overlays use 0xa for a single row's
+ * backing box and 0xf for a drop to the next block; 0xb fits the Bank Gothic
+ * glyphs with a pixel of air, which is what six stacked rows want. */
+#define PORT_APU_ROW 0xb
+
+/* console cl_audio_pump: the live pump state, at the top-left corner where the
+ * FPS strip draws. Reads the pump's snapshot (audio_pc.c, port_audio_stats.h);
+ * FPS and TPS come from the frame timing code, so this agrees with the strip it
+ * displaces. */
+static Gfx *portDrawAudioPumpStats(Gfx *gdl, s32 x, s32 y)
+{
+    extern s32 g_PortStatFps;                      /* frametiming.c */
+    extern s32 g_PortStatTps;
+    struct PortAudioPumpStats st;
+    char line[6][48];
+    s32 rows = 0;
+    s32 top = y;
+    s32 i;
+
+    portAudioPumpStatsGet(&st);
+
+    /* One theme per row, and every value carries its unit. The first cut mixed
+     * window totals with per-second rates under a single "/s" and read as
+     * nonsense; a reader should never have to know which is which from context.
+     *
+     * Rates are per second. SND is milliseconds of audio, the only unit in
+     * which "are we keeping up" is judgeable at a glance. DRY/OVER/SKIP/FRC
+     * are counts of events in the window and stay dimensionless. */
+    sprintf(line[rows++], "FPS %dfps TPS %dtps",
+            (int) g_PortStatFps, (int) g_PortStatTps);
+    {
+        /* PMP is every pump call; RND is the subset that produced audio.
+         * portAudioPump runs every scheduler iteration, so PMP dwarfs RND and
+         * says nothing about sound on its own - the pair is the point. */
+        u32 pps = (st.valid && st.window_ms != 0)
+                ? (u32) (((unsigned long long) st.pumps * 1000u) / st.window_ms) : 0;
+        u32 rps = (st.valid && st.window_ms != 0)
+                ? (u32) (((unsigned long long) st.busy * 1000u) / st.window_ms) : 0;
+
+        if (pps >= 10000u)
+        {
+            sprintf(line[rows++], "PMP %uk/s RND %u/s",
+                    (unsigned) (pps / 1000u), (unsigned) rps);
+        }
+        else
+        {
+            sprintf(line[rows++], "PMP %u/s RND %u/s", (unsigned) pps, (unsigned) rps);
+        }
+    }
+    sprintf(line[rows++], "QUE %u/%uB CAP %uB", st.queue, st.target, st.cap);
+    /* Rendered against the wall time it was worth. Equal means audio time is
+     * tracking the clock, which is the whole point of the pacing; short means
+     * the sink is starving. */
+    if (st.rate != 0)
+    {
+        sprintf(line[rows++], "SND %ums/%ums",
+                (unsigned) (((unsigned long long) st.rendered * 1000u) / st.rate),
+                (unsigned) (((unsigned long long) st.needed * 1000u) / st.rate));
+    }
+    else
+    {
+        sprintf(line[rows++], "SND %u/%u", (unsigned) st.rendered, (unsigned) st.needed);
+    }
+    sprintf(line[rows++], "DRY %u OVER %u SKIP %u FRC %u",
+            st.dry, st.overcap, st.skipped, st.forced);
+    /* Credit is samples x1000, which is meaningless to read raw; divided by the
+     * rate it is milliseconds of audio, the same unit as SND. */
+    sprintf(line[rows++], "STALL %d CLK %dms DEV %uHz",
+            (int) st.stalled,
+            (st.rate != 0) ? (int) (st.credit / (s32) st.rate) : 0,
+            st.has_sink ? st.rate : 0u);
+
+    gdl = microcode_constructor(gdl);
+    PORT_HUD_ANCHOR_FULL(gdl, PORT_HUD_ANCHOR_LEFT);   /* the overlay sits at the window edge */
+    /* One black backing box for the whole block, as the input overlay does for
+     * its row: a bright sky behind six lines of thin glyphs is unreadable. */
+    gdl = microcode_constructor_related_to_menus(gdl, 0, top - 1, viGetX(),
+                                                 top + rows * PORT_APU_ROW, 0x64);
+    for (i = 0; i < rows; i++)
+    {
+        s32 lx = x;
+        s32 ly = top + i * PORT_APU_ROW;
+
+        /* Same gate the console uses for its rows: a glyph is up to 12 Gfx
+         * commands and this block is ~125 of them, far more than the two or
+         * three digits the FPS strip draws. Rather than overrun the master
+         * display list at the end of a busy frame, stop at the first row that
+         * does not fit - a short block beats corruption. */
+        if (dynGetFreeGfx2(gdl) < 3 + (s32) strlen(line[i]) * 12)
+        {
+            break;
+        }
+        gdl = textRender(gdl, &lx, &ly, line[i], ptrFontBankGothicChars, ptrFontBankGothic,
+                         -1, viGetX(), viGetY(), 0, 0);
+    }
+    PORT_HUD_ANCHOR_OFF(gdl);
+    gdl = combiner_bayer_lod_perspective(gdl);
+
+    return gdl;
+}
+
 static Gfx *portDrawFpsCounter(Gfx *gdl)
 {
+    extern s32 portVideoShowFps(void);      /* video.c; weak 0 headless */
+    extern s32 portAudioPumpStatsShown(void); /* audio_pc.c; weak 0 headless */
+    /* Both are player-1-only corner overlays, so they never compete with the
+     * split-screen quadrants. */
+    const s32 corner_ok = (getPlayerCount() == 1 || get_cur_playernum() == 0);
+    s32 ox = viGetViewLeft() + 2;
+    s32 oy = viGetViewTop() + 2;
+
+    /* Solo full height keeps the top row while paused, since the view snaps 10
+     * lines down at the end of the pause-box ease. */
+    if (getPlayerCount() == 1 && portFullHeightActive())
+    {
+        oy = 2;
+    }
+
     { /* midas.ini [display] show_fps=1 (GE_SHOWFPS env override): rendered
        * frames per second, drawn in-window for fullscreen use, from gfx_sdl2's
-       * 500ms stat window via g_PortStatFps (0 headless). */
-        extern s32 portVideoShowFps(void); /* video.c; weak 0 headless */
-        if (portVideoShowFps() && (getPlayerCount() == 1 || get_cur_playernum() == 0))
+       * 500ms stat window via g_PortStatFps (0 headless).
+       *
+       * SUPPRESSED when the pump block is on: the block carries FPS and TPS
+       * itself, so leaving the digits up would print the same two numbers
+       * twice, one above the other. */
+        if (portVideoShowFps() && !portAudioPumpStatsShown() && corner_ok)
         {
             /* Just the number, in the small Gothic font, two units in from the
              * view's top-left so it stays above the top text box; always
              * anchored to the window's left (TPS is in the log's stats line). */
             static char fpstext[16];
-            s32 fp_x = viGetViewLeft() + 2;
-            s32 fp_y = viGetViewTop() + 2;
-
-            /* Solo full height keeps the top row while paused, since the view
-             * snaps 10 lines down at the end of the pause-box ease; the black
-             * bar the digits sit on is drawn before them. */
-            if (getPlayerCount() == 1 && portFullHeightActive())
-            {
-                fp_y = 2;
-            }
+            s32 fp_x = ox;
+            s32 fp_y = oy;
 
             sprintf(fpstext, "%d", (int) g_PortStatFps);
             gdl = microcode_constructor(gdl);
@@ -12683,6 +12806,15 @@ static Gfx *portDrawFpsCounter(Gfx *gdl)
             gdl = textRenderOutlined(gdl, &fp_x, &fp_y, fpstext, ptrFontBankGothicChars, ptrFontBankGothic, -1, 0x646464FFU, viGetX(), viGetY(), 0, 0);
             PORT_HUD_ANCHOR_OFF(gdl);
             gdl = combiner_bayer_lod_perspective(gdl);
+        }
+    }
+
+    { /* console cl_audio_pump 1: the live pump block, in the corner the strip
+       * uses. It owns that corner whenever it is on, so it starts where the
+       * digits would have, not below them. */
+        if (portAudioPumpStatsShown() && corner_ok)
+        {
+            gdl = portDrawAudioPumpStats(gdl, ox + 1, oy + 1);
         }
     }
     return gdl;
@@ -13691,7 +13823,7 @@ void hudmsgsSetOff(s32 flags)
 
 
 #ifdef VERSION_US
-void setFontTables(s32 arg0, s32 arg1)
+void setFontTables(struct fontchar *arg0, struct font *arg1)
 {
     copy_2ndfonttable = arg0;
     copy_1stfonttable = arg1;
@@ -13934,7 +14066,7 @@ Gfx* hudmsgBottomRender(Gfx* arg0)
             /* HUD Scale: the message is laid out from the view's bottom-left */
             arg0 = portHudScaleBegin(arg0, (f32) viGetViewLeft(), (f32) (viGetViewTop() + viGetViewHeight()));
 #endif
-            arg0 = draw_blackbox_to_screen(arg0, (s32) &view_left, (s32) &view_vert, (s32) &view_horiz, (s32) &view_top);
+            arg0 = draw_blackbox_to_screen(arg0, (intptr_t) &view_left, (intptr_t) &view_vert, (intptr_t) &view_horiz, (intptr_t) &view_top);
             arg0 = combiner_bayer_lod_perspective(textRenderOutlined(arg0, &view_left, &view_vert, stringbuffer_lowerleft[status_bar_text_buffer_index], BONDVIEW_2ND_FONTTABLE(status_bar_text_buffer_index), BONDVIEW_1ST_FONTTABLE(status_bar_text_buffer_index), -1, 0x646464FFU, (s16) (s32) viGetX(), (s16) viGetY(), 0, 0));
 #ifndef TARGET_N64
             arg0 = portHudScaleEnd(arg0);
@@ -14271,7 +14403,7 @@ s32 playerTick(PropRecord *prop)
      * are read) */
     f32 mtx[16];
     s32 tailret;
-    s32 anim;
+    ModelAnimation *anim;
     f32 angle;
     f32 frame;
     f32 local90;
@@ -14283,7 +14415,7 @@ s32 playerTick(PropRecord *prop)
     coord3d off;
     s32 i;
     s32 found;
-    s32 cur;
+    ModelAnimation *cur;
     PropRecord *rightprop;
     struct WeaponObjRecord *leftobj;
     struct WeaponObjRecord *rightobj;
@@ -14395,7 +14527,7 @@ s32 playerTick(PropRecord *prop)
             {
                 cur = ppointers[index]->players_cur_animation;
  
-                if (cur == (g_bondviewBondDeathAnimations[i] + ((s32) ptr_animation_table)))
+                if (cur == portAnimationFromOffset(g_bondviewBondDeathAnimations[i]))
                 {
                     found = 1;
                 }
@@ -14408,7 +14540,7 @@ s32 playerTick(PropRecord *prop)
             }
             else
             {
-                anim = g_bondviewBondDeathAnimations[randomGetNext() % g_bondviewBondDeathAnimationsCount] + ((s32) ptr_animation_table);
+                anim = portAnimationFromOffset(g_bondviewBondDeathAnimations[randomGetNext() % g_bondviewBondDeathAnimationsCount]);
                 angle = 0.5f;
             }
  
@@ -14590,7 +14722,7 @@ lean_return_to_centre:
  
             if (fa->anim != 0)
             {
-                anim = fa->anim + (s32) ptr_animation_table;
+                anim = portAnimationFromOffset(fa->anim);
             }
  
             angle *= fa->x;
@@ -14603,7 +14735,7 @@ lean_return_to_centre:
 join_768:
         if ((firingtable != NULL) && (anim == 0))
         {
-            anim = *((s32 *) firingtable);
+            anim = firingtable->anim.anim;
         }
  
         if (anim != cur)
@@ -14632,7 +14764,7 @@ join_768:
             if (ppointers[index]->bodyModel->anim2 == NULL)
             {
                 startframe = (0.0f <= frame) ? (frame) : (0.0f);
-                modelSetAnimation(ppointers[index]->bodyModel, (ModelAnimation *) anim, 0, startframe, angle, 16.0f);
+                modelSetAnimation(ppointers[index]->bodyModel, anim, 0, startframe, angle, 16.0f);
                 ppointers[index]->players_cur_animation = anim;
                 ppointers[index]->field_1288 = angle;
  
@@ -14864,7 +14996,7 @@ void sub_GAME_7F08BEEC(Mtxf *matrices, s32 count)
 
     for (i = 0, j = 0; i < count; i++, j += sizeof(Mtxf))
     {
-        matrix_4x4_multiply_homogeneous(currentPlayerGetViewToWorldMtxf(), (Mtxf *)((u32)matrices + j), &sp40);
+        matrix_4x4_multiply_homogeneous(currentPlayerGetViewToWorldMtxf(), (Mtxf *)((uintptr_t)matrices + j), &sp40);
 
         sp40.m[3][0] -= g_CurrentPlayer->current_model_pos.f[0];
         sp40.m[3][1] -= g_CurrentPlayer->current_model_pos.f[1];

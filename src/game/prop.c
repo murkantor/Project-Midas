@@ -1,4 +1,11 @@
 #include <ultra64.h>
+#include "game/bondinv.h"
+#include "game/cheat.h"
+#include "game/deb_loadallmodels.h"
+#include "game/front.h"
+#include "game/initguards.h"
+#include "game/initunk_005520.h"
+#include "game/lv.h"
 #include <memp.h>
 #ifndef TARGET_N64
 #include <stddef.h> /* offsetof - the weapon-alias contract pin */
@@ -1452,7 +1459,7 @@ void setupDoor(s32 arg0, struct DoorRecord *door, s32 arg2)
 /* ROM loading (port/src/romfile_setup.c): a setup loaded from the ROM is the
  * N64 image (offsets), so it uses the N64 promotion. Set right after the file loads, below. */
 s32 g_portSetupFromRom;
-#define SETUP_PROMOTE(base, val) (g_portSetupFromRom ? (void *) (((u32) (base)) + ((u32) (val))) : (void *) (u32) (val))
+#define SETUP_PROMOTE(base, val) (g_portSetupFromRom ? (void *) (((uintptr_t) (base)) + ((uintptr_t) (val))) : (void *) (uintptr_t) (val))
 
 /* bring-up (GE_DUMP_BOND): called at load milestones to find which step
  * corrupts the path waypoints data. */
@@ -1540,7 +1547,7 @@ static u32 portMeasurePads(u32 *pads)
         pad++;
     }
 
-    return ((u32) (pad + 1) - (u32) pads) / 4; /* include the terminator record */
+    return ((uintptr_t) (pad + 1) - (uintptr_t) pads) / 4; /* include the terminator record */
 }
 
 static u32 portMeasureBoundPads(u32 *pads)
@@ -1552,7 +1559,7 @@ static u32 portMeasureBoundPads(u32 *pads)
         vol++;
     }
 
-    return ((u32) (vol + 1) - (u32) pads) / 4;
+    return ((uintptr_t) (vol + 1) - (uintptr_t) pads) / 4;
 }
 
 /* Load-time setup lint: byte-swapped or garbled setup data shows up as
@@ -1952,6 +1959,13 @@ void proplvreset2(enum LEVELID stageId)
             g_portSetupFromRom = romdataFileServed(fileGetIndex((u8 *) strResource));
         }
 #endif
+#ifdef GE_NATIVE_64
+        {
+            extern struct stagesetup *romfileSetupNative(const u8 *base);
+            g_ptrStageSetupFile = romfileSetupNative((const u8 *)g_ptrStageSetupFile);
+            g_portSetupFromRom = 0;
+        }
+#endif
         local_stage = g_ptrStageSetupFile;
         langLoadToAddr(langGetLangBankIndexFromStagenum(stageId));
 
@@ -1970,6 +1984,7 @@ void proplvreset2(enum LEVELID stageId)
         g_CurrentSetup.boundpads = SETUP_PROMOTE(local_stage, local_stage->boundpads);
 
 #ifndef TARGET_N64
+#ifndef GE_NATIVE_64
         /* a ROM-served setup is a fresh copy every load (the N64 way) -
          * the snapshot/restore exists only for the compiled-in files */
         if (!g_portSetupFromRom)
@@ -2053,6 +2068,8 @@ void proplvreset2(enum LEVELID stageId)
                 }
             }
         }
+#endif
+
 #endif
 
         // Pad names and bound names are optional. An offset of 0 means absent.

@@ -73,13 +73,13 @@
 #else /* PC port: there is no KSEG mapping, and masking host pointers corrupts
        * them (it crashed texSelect). All conversions are identity. */
 
-#define	K0_TO_K1(x)	((u32)(x))
-#define	K1_TO_K0(x)	((u32)(x))
-#define	K0_TO_PHYS(x)	((u32)(x))
-#define	K1_TO_PHYS(x)	((u32)(x))
-#define	KDM_TO_PHYS(x)	((u32)(x))
-#define	PHYS_TO_K0(x)	((u32)(x))
-#define	PHYS_TO_K1(x)	((u32)(x))
+#define	K0_TO_K1(x)	((uintptr_t)(x))
+#define	K1_TO_K0(x)	((uintptr_t)(x))
+#define	K0_TO_PHYS(x)	((uintptr_t)(x))
+#define	K1_TO_PHYS(x)	((uintptr_t)(x))
+#define	KDM_TO_PHYS(x)	((uintptr_t)(x))
+#define	PHYS_TO_K0(x)	((uintptr_t)(x))
+#define	PHYS_TO_K1(x)	((uintptr_t)(x))
 
 #endif /* TARGET_N64 */
 

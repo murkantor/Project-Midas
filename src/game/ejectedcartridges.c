@@ -1,4 +1,5 @@
 #include <ultra64.h>
+#include "game/objecthandler.h"
 #include "ejectedcartridges.h"
 #include "bondtypes.h"
 #include "gun.h"

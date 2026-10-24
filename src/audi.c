@@ -1,4 +1,5 @@
 #include <ultra64.h>
+#include "init.h"
 #include <PR/os.h>
 #include "sched.h"
 #include "audi.h"
@@ -314,7 +315,7 @@ OSMesg g_DmaMessageBuffer[AUDIO_DMA_QUEUE_SIZE];
 
 
 // Forward declarations
-s32 amDmaCallback(s32 addr, s32 len, void* state);
+intptr_t amDmaCallback(intptr_t addr, s32 len, void* state);
 void amClearDmaBuffers(void);
 void amHandleFrameMessage(AudioInfo *info, AudioInfo *lastInfo);
 void amHandleDoneMessage(AudioInfo *info);
@@ -546,10 +547,10 @@ void amHandleFrameMessage(AudioInfo *info, AudioInfo *lastInfo)
     info->task.msg = info;
     info->task.flags = OS_SC_NEEDS_RSP;
     info->task.list.t.data_ptr = (u64*)(g_AudioManager.cmdList[g_CurrentAcmdList]);
-    info->task.list.t.data_size = (((s32)cmdlp - (s32)g_AudioManager.cmdList[g_CurrentAcmdList]) >> 3) * sizeof(Acmd);
+    info->task.list.t.data_size = (((intptr_t)cmdlp - (intptr_t)g_AudioManager.cmdList[g_CurrentAcmdList]) >> 3) * sizeof(Acmd);
     info->task.list.t.type = M_AUDTASK;
     info->task.list.t.ucode_boot = (u64*)rspbootTextStart;
-    info->task.list.t.ucode_boot_size = ((s32)gsp3DTextStart - (s32)rspbootTextStart);
+    info->task.list.t.ucode_boot_size = ((intptr_t)gsp3DTextStart - (intptr_t)rspbootTextStart);
     info->task.list.t.flags = 0; // 1c
     info->task.list.t.ucode = (u64*)aspMainTextStart;
     info->task.list.t.ucode_data = (u64*)aspMainDataStart;
@@ -628,7 +629,7 @@ void amHandleDoneMessage(AudioInfo *info)
  * @param state unused.
  * @return result from call to osVirtualToPhysical
  */
-s32 amDmaCallback(s32 addr, s32 len, void* state)
+intptr_t amDmaCallback(intptr_t addr, s32 len, void* state)
 {
     void *freeBuffer;
     s32 delta;

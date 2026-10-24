@@ -398,6 +398,8 @@ static void conCmdHelp(void)
     conPrintLn(0, "  cl_<setting> <value>  set any setting - cl_vsync 0, cl_maxfps 144");
     conPrintLn(0, "  cl_<setting>          show it");
     conPrintLn(0, "  cl_showfps 0|1        the FPS / TPS strip");
+    conPrintLn(0, "  cl_audio_pump 0|1      live audio pump state under the FPS strip");
+    conPrintLn(0, "  cl_audio_log 0|1       the same, once a second, to Data/Logs/audio_pump.log");
     conPrintLn(0, "  cl_fov <deg>          field of view (16:9 horizontal); cl_fps = cl_maxfps");
     conPrintLn(0, "  cl_hitchms <ms>       log frames this slow as 'ge: hitch:' (0 = off, not saved)");
     conPrintLn(0, "  cl_fadedbg 0|1        log objects' fade / cull changes as 'ge: fade:'");
@@ -461,6 +463,43 @@ static void conCmdClient(const char *name, const char *value)
             portFadeDbgSet(atoi(value) != 0);
         }
         portConPrintf(value != NULL, "cl_fadedbg = %d (log: 'ge: fade:' lines)\n", (int) g_PortFadeDbg);
+        return;
+    }
+    /* The overlay toggle lives in audio_pc.c beside the counters it shows. Not
+     * a midas.ini key: it is a diagnostic, so it should not survive a restart
+     * because someone typed it once while reading a crackle report. The hyphen
+     * spelling is accepted too, since the console echoes the underscore form
+     * but the name reads as two words. */
+    if (conStrEqI(name, "audio_pump") || conStrEqI(name, "audio-pump"))
+    {
+        extern s32 portAudioPumpStatsShown(void);   /* audio_pc.c */
+        extern void portAudioPumpStatsSet(s32 on);
+
+        if (value != NULL)
+        {
+            portAudioPumpStatsSet(atoi(value) != 0);
+        }
+        portConPrintf(value != NULL, "cl_audio_pump = %d (%s, not saved)\n",
+                      (int) portAudioPumpStatsShown(), portAudioPumpStatsShown() ? "on" : "off");
+        return;
+    }
+    if (conStrEqI(name, "audio_log") || conStrEqI(name, "audio-log"))
+    {
+        extern s32 portAudioPumpLogShown(void);    /* audio_pc.c */
+        extern void portAudioPumpLogSet(s32 on);
+
+        if (value != NULL)
+        {
+            portAudioPumpLogSet(atoi(value) != 0);
+        }
+        if (portAudioPumpLogShown())
+        {
+            portConPrintf(value != NULL, "cl_audio_log = 1 (on, not saved) -> Data/Logs/audio_pump.log\n");
+        }
+        else
+        {
+            portConPrintf(value != NULL, "cl_audio_log = 0 (off, not saved)\n");
+        }
         return;
     }
     if (conStrEqI(name, "hitchms"))

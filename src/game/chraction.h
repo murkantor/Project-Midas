@@ -4,6 +4,8 @@
 #include <bondgame.h>
 #include "chrobjdata.h"
 
+struct weapon_firing_animation_table;
+
 // Value is 3, it just needs to be less than MAX_CHRWAYPOINTS
 #define PATH_FINDING_WP_LIMIT (MAX_CHRWAYPOINTS - 3)
 
@@ -76,10 +78,10 @@ bool actor_aim_at_actor(ChrRecord *self, s32 attack_type, s32 b);
 bool actor_kneel_aim_at_actor(ChrRecord *self, s32 targettype, s32 targetid);
 bool check_set_actor_standing_still(ChrRecord *self, s32 faceentitytype, s32 faceentityid);
 bool chrGoToPad(ChrRecord *self, s32 padid, SPEED speed);
-bool if_actor_able_set_on_path(ChrRecord *self, s32 pathid);
+bool if_actor_able_set_on_path(ChrRecord *self, void *pathid);
 f32 chrlvGetSubrotySideback(ChrRecord *arg0);
 f32 chrlvGetAimLimitAngle(f32 arg0);
-void chrlvUpdateAimendbackShoulders(ChrRecord *arg0, void *arg1, s32 same, s32 swap, f32 next);
+void chrlvUpdateAimendbackShoulders(ChrRecord *arg0, struct weapon_firing_animation_table *arg1, s32 same, s32 swap, f32 next);
 void chrSetFiring(ChrRecord *arg0, s32 hand, s32 firing);
 s32 sub_GAME_7F02D630(ChrRecord *arg0, GUNHAND hand, coord3d *arg2);
 void chrlvTriggerFireWeapon(ChrRecord *arg0);

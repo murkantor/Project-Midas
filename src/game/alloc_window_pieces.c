@@ -1,4 +1,6 @@
 #include <ultra64.h>
+#include "game/lv.h"
+#include "game/player.h"
 #include <bondconstants.h>
 #include <memp.h>
 #include "alloc_window_pieces.h"

@@ -38,4 +38,7 @@ void setTextOverlapCorrection(s32 flag);
 
 Gfx* draw_blackbox_to_screen(Gfx *glist, s32 *ulx, s32 *uly, s32 *lrx, s32 *lry);
 
+
+void setTextOrientation(s32 orientation);
+
 #endif

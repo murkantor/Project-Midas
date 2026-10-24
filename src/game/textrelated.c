@@ -1,4 +1,5 @@
 #include <ultra64.h>
+#include "fr.h"
 #include <memp.h>
 #include "textrelated.h"
 #include "bondtypes.h"
@@ -120,6 +121,25 @@ static void portFontClearPadding(struct fontchar *chars, s32 count)
 }
 #endif
 
+#ifdef GE_NATIVE_64
+static struct font *portFontLoadNative(const u8 *source, u32 size)
+{
+    u8 *raw = mempAllocBytesInBank(size, MEMPOOL_STAGE);
+    struct font *font = mempAllocBytesInBank(sizeof(*font), MEMPOOL_STAGE);
+    memcpy(raw, source, size);
+    memset(font, 0, sizeof(*font));
+    memcpy(font->kerning, raw, sizeof(font->kerning));
+    for (s32 i = 0; i < 94; i++) {
+        const u8 *record = raw + 169 * 4 + i * 24;
+        u32 offset;
+        memcpy(&font->chars[i], record, 20);
+        memcpy(&offset, record + 20, 4);
+        font->chars[i].pixeldata = raw + offset;
+    }
+    return font;
+}
+#endif
+
 void load_font_tables(void)
 {
     u32 len;
@@ -148,6 +168,14 @@ void load_font_tables(void)
     text_s = 0;
     text_t = 0;
 
+#ifdef GE_NATIVE_64
+    len = (u8 *)&_fontbankgothicSegmentEnd - (u8 *)&_fontbankgothicSegmentStart;
+    ptrFontBankGothic = portFontLoadNative((const u8 *)&_fontbankgothicSegmentRomStart, len);
+    ptrFontBankGothicChars = ptrFontBankGothic->chars;
+    len = (u8 *)&_fontzurichboldSegmentEnd - (u8 *)&_fontzurichboldSegmentStart;
+    ptrFontZurichBold = portFontLoadNative((const u8 *)&_fontzurichboldSegmentRomStart, len);
+    ptrFontZurichBoldChars = ptrFontZurichBold->chars;
+#else
     len = (romptr_t)&_fontbankgothicSegmentEnd - (romptr_t)&_fontbankgothicSegmentStart;
 	ptrFontBankGothic = (struct font *)mempAllocBytesInBank(len, MEMPOOL_STAGE);
 	ptrFontBankGothicChars = ptrFontBankGothic->chars;
@@ -181,6 +209,7 @@ void load_font_tables(void)
 			((uintptr_t)ptrFontZurichBoldChars[i].pixeldata + (uintptr_t)ptrFontZurichBold);
 #endif
 	}
+#endif
 #ifndef TARGET_N64
 	portFontClearPadding(ptrFontBankGothicChars, 94);
 	portFontClearPadding(ptrFontZurichBoldChars, 94);

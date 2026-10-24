@@ -1,4 +1,5 @@
 #include <ultra64.h>
+#include "game/objecthandler.h"
 #include <bondtypes.h>
 #include "chrai.h"
 #include "chrobjdata.h"
@@ -49,6 +50,10 @@ s32 getposstan(struct coord3d *pos, StandTile *stan, f32 radius, struct coord3d 
 */
 s32 sizepropdef(PropDefHeaderRecord *pdef)
 {
+#ifdef GE_NATIVE_64
+    extern s32 romfileNativePropSize(u8 type);
+    return romfileNativePropSize(pdef->type) / 4;
+#endif
     #if 1
     switch (pdef->type)
     {

@@ -47,7 +47,7 @@
 #ifdef GE_ROMDATA_FALLBACK
 #define PORT_RAMROM(name) \
     __asm__( \
-        "    .section .data\n" \
+        ASM_DATA \
         "    .balign 16\n" \
         "    .globl " ASM_SYM(#name) "\n" \
         ASM_SYM(#name) ":\n" \
@@ -58,7 +58,7 @@
 #else
 #define PORT_RAMROM(name) \
     __asm__( \
-        "    .section .data\n" \
+        ASM_DATA \
         "    .balign 16\n" \
         "    .globl " ASM_SYM(#name) "\n" \
         ASM_SYM(#name) ":\n" \
@@ -89,7 +89,7 @@ PORT_RAMROM(ramrom_Train);
  * for .incbin is set on this file in CMakeLists. */
 #ifdef GE_ROMDATA_FALLBACK
 __asm__(
-    "    .section .data\n"
+    ASM_DATA
     "    .balign 16\n"
     "    .globl " ASM_SYM("port_unknown2Blob") "\n"
     ASM_SYM("port_unknown2Blob") ":\n"

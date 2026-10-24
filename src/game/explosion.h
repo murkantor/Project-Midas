@@ -195,4 +195,10 @@ void explosionCreate(PropRecord *arg0, struct coord3d *target_pos, StandTile *ta
 void sub_GAME_7F09C250(s32 arg0, struct coord3d *pos, struct StandTile *stan, s16 arg3, s32 flag4, s32 playernum, u8 *rooms, s32 flag7);
 #endif
 
+
+void setSixExplosionAndSmokeEntries(void);
+void explosionClearBulletImpactRoomByFlag(PropRecord* arg0, s8 arg1);
+void explosionClearBulletImpactRoom(PropRecord* arg0);
+void cleanupExplosions(void);
+
 #endif

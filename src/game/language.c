@@ -9,7 +9,7 @@
 
 // bss
 //CODE.bss:8008C640
-s32 g_LangBanks[45];
+u32 *g_LangBanks[45];
 
 
 //CODE.bss:8008C6F4
@@ -415,7 +415,7 @@ u8 * langGet(s32 slotID)
     u32 bank_id = slotID >> 10;
     u32 * textbank_ptr;
     u32 textslot_offset;
-    u32 output_slot;
+    uintptr_t output_slot;
 
 #ifndef TARGET_N64
     if (bank_id >= 45)
@@ -438,8 +438,8 @@ u8 * langGet(s32 slotID)
     textslot_offset = textbank_ptr[slotID & 0x03FF]; /* load the textbank ptr table then get the slot's offset */
 
     output_slot = textslot_offset; /* add the text slot offset to the base ptr to get the ptr to text file's slot */
-#ifdef TARGET_N64
-    output_slot += (u32)textbank_ptr;
+#if defined(TARGET_N64) || defined(GE_NATIVE_64)
+    output_slot += (uintptr_t)textbank_ptr;
 #endif
     /* PORT: compiled-in text banks (char *LxE[] = {...}) store absolute
      * pointers, not bank-relative offsets, so don't add the base. */

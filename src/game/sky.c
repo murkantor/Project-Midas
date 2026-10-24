@@ -1,3 +1,4 @@
+#include <math.h>
 #include <ultra64.h>
 #include <memp.h>
 #include "sky.h"

@@ -16,6 +16,23 @@ struct bondstruct_unk_op07_related {
     s32 unk0C;
 };
 
+#ifdef GE_NATIVE_64
+#define MODEL_SLOT_MEMBERS \
+    union { \
+        Model model; \
+        struct { \
+            s16 unk00; \
+            s16 unk02; \
+            struct ChrRecord *unk04; \
+            ModelFileHeader *unk08; \
+            RenderPosView *unk0c; \
+            union ModelRwData **unk10; \
+        }; \
+    }
+struct AnimModelSlot { MODEL_SLOT_MEMBERS; };
+struct ModelSlot { MODEL_SLOT_MEMBERS; };
+#undef MODEL_SLOT_MEMBERS
+#else
 struct AnimModelSlot {
     s16 unk00;
     s16 unk02;
@@ -82,6 +99,8 @@ struct ModelSlot {
     s32 unk1c;
 };
 
+#endif
+
 extern struct AnimModelSlot *g_AnimModelSlots;
 extern struct ModelSlot *g_ModelSlots;
 
@@ -91,7 +110,7 @@ extern f32 g_ModelDistanceScale;
 extern u32 g_ModelAnimMergingEnabled;
 extern s32 D_80036410;
 extern struct bondstruct_unk_animation_related* D_80036414;
-extern s32 D_80036418;
+extern intptr_t D_80036418;
 extern s32 D_8003641C;
 extern u32 D_800363F0;
 

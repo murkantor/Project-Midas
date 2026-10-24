@@ -24,4 +24,7 @@ struct huft {
 		struct huft *t;   /* pointer to next level of table */
 	} v;
 };
+
+int zlib_inflate(void);
+
 #endif

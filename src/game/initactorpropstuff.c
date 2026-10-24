@@ -1,4 +1,5 @@
 #include <ultra64.h>
+#include "game/model.h"
 #include "initactorpropstuff.h"
 #include "initanitable.h"
 #include "chr.h"
@@ -108,7 +109,11 @@ s32 initResolveAnimGroupTable(struct weapon_firing_animation_table *animconfig)
 
         do
         {
+            #ifdef GE_NATIVE_64
+            config->anim.anim = portAnimationFromOffset(animoffset);
+#else
             config->anim.anim = (struct ModelAnimation *)(((0, animoffset)) + ((s32)ptr_animation_table));
+#endif
             endframe = floorFloatToInt(config->unk04);
             angle16 = sub_GAME_7F0001F0(config->anim.anim, 0, endframe) & 0xffff;
             duration = config->unk04;
@@ -166,6 +171,14 @@ void initResolveAnimGroups(struct anim_group_info **groups)
  */
 s32 initResolveAnimTable(struct StruckAnim *entries)
 {
+#ifdef GE_NATIVE_64
+    s32 count = 0;
+    while (entries[count].struck_anim != NULL) {
+        entries[count].struck_anim = portAnimationFromOffset((uintptr_t)entries[count].struck_anim);
+        count++;
+    }
+    return count;
+#else
     s32 count;
     struct StruckAnim *entry;
     s32 address;
@@ -192,11 +205,16 @@ s32 initResolveAnimTable(struct StruckAnim *entries)
     }
 
     return count;
+#endif
 }
 
 
+#ifdef GE_NATIVE_64
+#define ANIM_PTR(anim) portAnimationFromOffset((uintptr_t)&anim)
+#else
 #define ANIM_PTR(anim) \
     ((ModelAnimation *)((s32)&anim + ((s32)ptr_animation_table)))
+#endif
 
 #define ANIM_FRAC(anim) \
     ((((f32)sub_GAME_7F000290(ANIM_PTR(anim), 0, ANIM_PTR(anim)->unk04 - 1)) * 0.10000001f) / \

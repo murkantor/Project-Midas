@@ -758,3 +758,77 @@ sImageTableEntry s_mpstageselimages[] = {
 
 
 
+
+#ifndef TARGET_N64
+#include <stdlib.h>
+#include <string.h>
+
+void portOddTexturesReset(void)
+{
+    static struct {
+        void *data;
+        size_t size;
+        void *pristine;
+    } tables[] = {
+        { globalDL_0x000, sizeof(globalDL_0x000), NULL },
+        { globalDL_0x078, sizeof(globalDL_0x078), NULL },
+        { globalDL_0x120, sizeof(globalDL_0x120), NULL },
+        { globalDL_0x1c8, sizeof(globalDL_0x1c8), NULL },
+        { globalDL_0x270, sizeof(globalDL_0x270), NULL },
+        { globalDL_0x318, sizeof(globalDL_0x318), NULL },
+        { globalDL_0x3c0, sizeof(globalDL_0x3c0), NULL },
+        { globalDL_0x468, sizeof(globalDL_0x468), NULL },
+        { globalDL_0x510, sizeof(globalDL_0x510), NULL },
+        { globalDL_0x5b8, sizeof(globalDL_0x5b8), NULL },
+        { globalDL_0x660, sizeof(globalDL_0x660), NULL },
+        { globalDL_0x708, sizeof(globalDL_0x708), NULL },
+        { globalDL_0x7b0, sizeof(globalDL_0x7b0), NULL },
+        { globalDL_0x858, sizeof(globalDL_0x858), NULL },
+        { globalDL_0x900, sizeof(globalDL_0x900), NULL },
+        { globalDL_0x9a8, sizeof(globalDL_0x9a8), NULL },
+        { globalDL_0xa50, sizeof(globalDL_0xa50), NULL },
+        { s_genericimage, sizeof(s_genericimage), NULL },
+        { s_impactimages, sizeof(s_impactimages), NULL },
+        { s_explosion_smokeimages, sizeof(s_explosion_smokeimages), NULL },
+        { s_scattered_explosions, sizeof(s_scattered_explosions), NULL },
+        { s_flareimage1, sizeof(s_flareimage1), NULL },
+        { s_flareimage2, sizeof(s_flareimage2), NULL },
+        { s_flareimage3, sizeof(s_flareimage3), NULL },
+        { s_flareimage4, sizeof(s_flareimage4), NULL },
+        { s_flareimage5, sizeof(s_flareimage5), NULL },
+        { s_ammo9mmimage, sizeof(s_ammo9mmimage), NULL },
+        { s_rifleammoimage, sizeof(s_rifleammoimage), NULL },
+        { s_shotgunammoimage, sizeof(s_shotgunammoimage), NULL },
+        { s_knifeammoimage, sizeof(s_knifeammoimage), NULL },
+        { s_glammoimage, sizeof(s_glammoimage), NULL },
+        { s_rocketammoimage, sizeof(s_rocketammoimage), NULL },
+        { s_genericmineammoimage, sizeof(s_genericmineammoimage), NULL },
+        { s_grenadeammoimage, sizeof(s_grenadeammoimage), NULL },
+        { s_magnumammoimage, sizeof(s_magnumammoimage), NULL },
+        { s_goldengunammoimage, sizeof(s_goldengunammoimage), NULL },
+        { s_remotemineammoimage, sizeof(s_remotemineammoimage), NULL },
+        { s_timedmineammoimage, sizeof(s_timedmineammoimage), NULL },
+        { s_proxmineammoimage, sizeof(s_proxmineammoimage), NULL },
+        { s_tankammoimage, sizeof(s_tankammoimage), NULL },
+        { s_crosshairimage, sizeof(s_crosshairimage), NULL },
+        { s_betacrosshairimage, sizeof(s_betacrosshairimage), NULL },
+        { s_glassoverlayimage, sizeof(s_glassoverlayimage), NULL },
+        { s_monitorimages, sizeof(s_monitorimages), NULL },
+        { s_skywaterimages, sizeof(s_skywaterimages), NULL },
+        { s_mainfolderimages, sizeof(s_mainfolderimages), NULL },
+        { s_mpradarimages, sizeof(s_mpradarimages), NULL },
+        { s_mpcharselimages, sizeof(s_mpcharselimages), NULL },
+        { s_mpstageselimages, sizeof(s_mpstageselimages), NULL },
+    };
+    size_t i;
+    for (i = 0; i < sizeof(tables) / sizeof(tables[0]); i++) {
+        if (tables[i].pristine == NULL) {
+            tables[i].pristine = malloc(tables[i].size);
+            if (tables[i].pristine == NULL) abort();
+            memcpy(tables[i].pristine, tables[i].data, tables[i].size);
+        } else {
+            memcpy(tables[i].data, tables[i].pristine, tables[i].size);
+        }
+    }
+}
+#endif

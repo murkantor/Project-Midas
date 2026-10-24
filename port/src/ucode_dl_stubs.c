@@ -39,7 +39,7 @@
 
 /* ---- microcode chain (zeros; .bss) ------------------------------------- */
 __asm__(
-    "    .section .bss\n"
+    ASM_BSS
     "    .balign 16\n"
     "    .globl " ASM_SYM("rspbootTextStart") "\n"
     ASM_SYM("rspbootTextStart") ":\n"

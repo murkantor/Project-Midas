@@ -58,8 +58,8 @@ extern unsigned char _animation_entriesSegmentRomStart[];
 
 /* initanitable.c: raw PTR_ANIM_* segment offsets (0-terminated, 1 = null
  * entry) - still offsets here because expand_ani_table_entries runs later */
-extern int32_t animation_table_ptrs1[];
-extern int32_t animation_table_ptrs2[];
+extern intptr_t animation_table_ptrs1[];
+extern intptr_t animation_table_ptrs2[];
 
 #ifdef GE_ROMDATA_FALLBACK
 /* compiled-in segment blobs (assets/animationtable_data.c, in file order) */
@@ -234,7 +234,7 @@ static void portAnimProbeRom(const char *name, const unsigned char *built, const
 
 void portAnimDataInit(void)
 {
-    int32_t *tables[2];
+    intptr_t *tables[2];
     int t;
     u32 datasize = 0, entsize = 0;
     const u8 *romdata = romdataSeg("animation_data", &datasize);
@@ -269,7 +269,7 @@ void portAnimDataInit(void)
     tables[0] = animation_table_ptrs1;
     tables[1] = animation_table_ptrs2;
     for (t = 0; t < 2; t++) {
-        int32_t *p;
+        intptr_t *p;
         for (p = tables[t]; *p != 0; p++) {
             if (*p != 1) {
                 portAnimConvertEntry((uint32_t) *p);
