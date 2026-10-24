@@ -402,6 +402,7 @@ static void conCmdHelp(void)
     conPrintLn(0, "  cl_hitchms <ms>       log frames this slow as 'ge: hitch:' (0 = off, not saved)");
     conPrintLn(0, "  cl_fadedbg 0|1        log objects' fade / cull changes as 'ge: fade:'");
     conPrintLn(0, "console commands:");
+    conPrintLn(0, "  noclip                fly through walls; look up or down to climb or dive");
     conPrintLn(0, "  list [text]           the cl_ settings matching key or label");
     conPrintLn(0, "  harness [text]        the GE_* diagnostic env knobs");
     conPrintLn(0, "  clear                 empty the scrollback");
@@ -769,6 +770,12 @@ static void conExecute(char *line)
     else if (conStrEqI(cmd, "harness"))
     {
         conCmdHarness(arg1);
+    }
+    else if (conStrEqI(cmd, "noclip"))
+    {
+        extern s32 portNoclipToggle(void);   /* bondview2.c */
+
+        portConPrintf(1, "noclip %s\n", portNoclipToggle() ? "ON" : "OFF");
     }
     else if ((cmd[0] == 'c' || cmd[0] == 'C') && (cmd[1] == 'l' || cmd[1] == 'L') && cmd[2] == '_')
     {   /* cl_<setting> [value]: the value is the rest of the line (a key list keeps its spaces) */

@@ -5625,7 +5625,55 @@ f32 bondviewYPositionRelated(StandTile *arg0, f32 arg1, f32 arg2)
     return ret;
 }
 
+#ifndef TARGET_N64
+/* Console `noclip` (port_console.c): fly along the look direction through
+ * walls and floors, no gravity. Not saved. */
+static s32 s_noclip;
+#define NOCLIP_SPEED 15.0f   /* units per tick at full stick, ~2x a run */
 
+s32 portNoclipToggle(void)
+{
+    s_noclip = !s_noclip;
+    return s_noclip;
+}
+
+static s32 portNoclipOn(void)
+{
+    return s_noclip && !g_PlayerIsInTank && (g_PlayerTankProp == NULL);
+}
+
+/**
+ * Replaces the tick's collision move: forward follows the view pitch, strafe
+ * stays level. The floor tile follows the highest floor under him so room
+ * visibility keeps working; over the void the last tile is kept.
+ */
+static void portNoclipMove(void)
+{
+    struct coord3d *pos = &g_CurrentPlayer->field_488.collision_position;
+    const f32 t0 = g_CurrentPlayer->field_488.theta_transform.f[0];
+    const f32 t2 = g_CurrentPlayer->field_488.theta_transform.f[2];
+    const f32 sf = g_CurrentPlayer->speedforwards;
+    const f32 ss = g_CurrentPlayer->speedsideways;
+    const f32 cv = g_CurrentPlayer->vv_cosverta;
+    const f32 step = NOCLIP_SPEED * g_GlobalTimerDelta;
+    struct coord3d probe;
+    StandTile *tile;
+    f32 y;
+
+    pos->f[0] += ((t0 * sf * cv) - (t2 * ss)) * step;
+    pos->f[2] += ((t2 * sf * cv) + (t0 * ss)) * step;
+    g_CurrentPlayer->field_70 += sf * g_CurrentPlayer->vv_sinverta * step;
+
+    probe.f[0] = pos->f[0];
+    probe.f[1] = g_CurrentPlayer->field_70 + 30.0f;
+    probe.f[2] = pos->f[2];
+    tile = stanFindTileBelowPos(&probe, NULL, &y);
+    if (tile != NULL)
+    {
+        g_CurrentPlayer->field_488.current_tile_ptr = tile;
+    }
+}
+#endif
 
 /**
  * US Address 0x7F080DF8.
@@ -5673,6 +5721,16 @@ void bondviewUpdatePlayerY(s32 use_stanHeight, f32 stanHeight_offset)
     }
     else
     {
+#ifndef TARGET_N64
+        if (portNoclipOn())
+        {   /* the floor is wherever he is: no gravity, no snapping */
+            g_CurrentPlayer->stanHeight = g_CurrentPlayer->field_70;
+            g_CurrentPlayer->field_7C = 0.0f;
+            g_CurrentPlayer->field_2A6C = 0;
+            g_CurrentPlayer->field_6C = g_CurrentPlayer->field_70 / (1.0f - TANK_UNKD0_SCALE);
+            goto noclip_y_done;
+        }
+#endif
         if (use_stanHeight != 0)
         {
             g_CurrentPlayer->stanHeight = g_CurrentPlayer->stanHeight + stanHeight_offset;
@@ -5812,6 +5870,9 @@ void bondviewUpdatePlayerY(s32 use_stanHeight, f32 stanHeight_offset)
                 g_CurrentPlayer->field_2A70 = NULL;
             }
         }
+#ifndef TARGET_N64
+noclip_y_done:;
+#endif
     }
 
 #ifndef TARGET_N64
@@ -10579,6 +10640,14 @@ void MoveBond(s8 stick_x, s8 stick_y, u16 buttons, u16 oldbuttons)
                 ) * g_GlobalTimerDelta * 10.0f;
         }
 
+#ifndef TARGET_N64
+        if (portNoclipOn())
+        {
+            portNoclipMove();
+            goto noclip_moved;
+        }
+#endif
+
         bondviewCalcUpdatePlayerCollision(&move_offset, (g_CurrentPlayer->swaytarget == 0.0f));
 
         stanTileDistanceRelated(
@@ -10723,6 +10792,9 @@ void MoveBond(s8 stick_x, s8 stick_y, u16 buttons, u16 oldbuttons)
             }
         }
 
+#ifndef TARGET_N64
+noclip_moved:
+#endif
         ftemp_col_x = g_CurrentPlayer->field_488.collision_position.f[0] - start_collision_pos_x;
         ftemp_col_z = g_CurrentPlayer->field_488.collision_position.f[2] - start_collision_pos_z;
         sp240 = (move_offset.f[0] * move_offset.f[0]) + (move_offset.f[2] * move_offset.f[2]);
