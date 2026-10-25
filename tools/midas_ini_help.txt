@@ -119,12 +119,39 @@ padN_stickmode.
   pause_pillars       | 1          | Black side bars ease in while the watch
                       |            | is open (wide windows only)
   Frame rate
-  maxfps              | 120        | Frame rate cap. 0 = no cap, -1 = N64
-                      |            | pacing. Only lowers the rate; one game
-                      |            | tick runs per frame, so this also sets
-                      |            | the tick rate
-  tickhz              | (derived)  | Worked out from maxfps and rewritten by
-                      |            | the game. Do not edit; change maxfps
+  maxfps              | 120        | Frame rate cap. 0 = no frame cap. The
+                      |            | tick is uncapped too in practice, via
+                      |            | a 1000 Hz ceiling rather than no gate
+                      |            | (a zero gate left the loop unbounded).
+                      |            | A positive number also sets the tick
+                      |            | rate, never below 60: maxfps 30 asks
+                      |            | for a 60 Hz sim. The frame cap still
+                      |            | holds drawing to 30, and the loop runs
+                      |            | a tick per present - so tk reads 30,
+                      |            | each tick carrying two fields and f/s
+                      |            | still 60.0. Game time is right; only
+                      |            | the step rate followed the display.
+                      |            | -1 = the N64's pacing. Each frame is
+                      |            | held for the fields the console needed,
+                      |            | so frame rate and tick rate fall together
+                      |            | where the console slowed. GAME TIME still
+                      |            | advances at 60 fields a second - that is
+                      |            | the point, and f/s 60.0 is what shows it.
+                      |            | A stage load is held for the console's
+                      |            | load time too (about 9 s to enter Dam,
+                      |            | with nothing drawn meanwhile)
+  tickhz              | (derived)  | Do not edit this one; Max FPS decides
+                      |            | the tick rate. The game rewrites the
+                      |            | line to match what is running: a
+                      |            | numeric value follows maxfps (1..59
+                      |            | derive 60, 60 and up derive that
+                      |            | number, 0 leaves both uncapped), and
+                      |            | maxfps=-1 writes hw for the N64's
+                      |            | pacing. A number left behind by an
+                      |            | older build is corrected to hw on the
+                      |            | next launch, so the line always names
+                      |            | the mode that ran. Set Max FPS to
+                      |            | change the rate
   vsync               | 1          | 0 = never wait for vblank (tearing)
   render_thread       | -1         | Draw on its own thread. -1 = auto,
                       |            | 0 = off, 1 = on

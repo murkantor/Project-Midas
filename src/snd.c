@@ -1198,7 +1198,12 @@ ALSoundState *sndPlaySfx(struct ALBankAlt_s *soundBank, s16 soundIndex, ALSoundS
     {
         ALKeyMap *keyMap;
 
+#ifdef GE_NATIVE_64
+        /* GE's SFX IDs are one-based; its N64 Alt view starts one word early. */
+        sound = ((ALBank *)soundBank)->instArray[0]->soundArray[soundIndex - 1];
+#else
         sound = (soundBank->instArray[0]->soundArray[soundIndex]);
+#endif
 
         newState = sndSetupSound(soundBank, sound);
 
@@ -1206,7 +1211,7 @@ ALSoundState *sndPlaySfx(struct ALBankAlt_s *soundBank, s16 soundIndex, ALSoundS
         {
             ALSndpEvent playEvent;
 
-            g_sndPlayerPtr->target = (s32)newState;
+            g_sndPlayerPtr->target = (intptr_t)newState;
             playEvent.common.type = AL_SNDP_PLAY_EVT;
             playEvent.common.state = newState;
             deltaLoop = sound->keyMap->velocityMax * DELTA_33_MS;

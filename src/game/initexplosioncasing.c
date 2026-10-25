@@ -1,4 +1,6 @@
 #include <ultra64.h>
+#include "game/lv.h"
+#include "game/player.h"
 #include <memp.h>
 #include "initexplosioncasing.h"
 #include "explosion.h"

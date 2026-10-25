@@ -118,7 +118,7 @@ typedef struct ALLink_s {
 void    alUnlink(ALLink *element);
 void    alLink(ALLink *element, ALLink *after);
 
-typedef s32 (*ALDMAproc)(s32 addr, s32 len, void *state);
+typedef intptr_t (*ALDMAproc)(intptr_t addr, s32 len, void *state);
 typedef ALDMAproc (*ALDMANew)(void *state);
 
 void    alCopy(void *src, void *dest, s32 len);

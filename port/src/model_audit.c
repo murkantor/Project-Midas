@@ -30,7 +30,7 @@ extern int printf(const char *, ...);
 
 int portPtrLooksBad(const void *p)
 {
-    u32 v = (u32) p;
+    uintptr_t v = (uintptr_t)p;
 
     /* Conservative on purpose: flag only a small integer where a pointer
      * belongs, or misalignment. Host address ranges differ per OS (Linux puts

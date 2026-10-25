@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <ultra64.h>
+#include "port_options.h"
 
 #ifdef GE_XBOX
 /* No SDL on the console: the string/keyboard/thread stand-ins live in the
@@ -28,6 +29,7 @@
 #include "../fast3d/gfx_opengl.h"
 #endif
 #include "game/frametiming.h"   /* portTickSetHz: [display] tickhz */
+#include "tick_stats.h"         /* portTickIniValue: the tickhz text this file holds */
 #include "romdata.h"            /* romdataIsIniKey: [data] keys are not "unknown controls" */
 
 /* port_console.c: same output as the fprintf(stderr, ...) this replaced,
@@ -256,7 +258,7 @@ static int s_CfgTrueEnemyRockets = 1; /* 0 = restore the vanilla Enemy Rockets
                                        * the guard with their original
                                        * weapon right after giving them the
                                        * rocket launcher) */
-static int s_CfgShowFps = 0;          /* 1 = in-game FPS/TPS overlay strip */
+static int s_CfgShowFps = 0;          /* 1 = in-game FPS digits */
 /* what midas.ini literally contained, so the derived value can be written back
  * only when the file disagrees */
 static int s_CfgTickSeenInIni = 0;
@@ -265,6 +267,7 @@ static int s_CfgTickAsWritten = 60;
  * is parsed, and a `tickhz=` line further down has not been seen yet, so
  * writing back mid-parse would record a value from a half-read file. */
 static int s_CfgTickLoadDone = 0;
+static char s_CfgTickBuf[PORT_TICK_INI_BUF];
 static int s_CfgTickHz = 60;          /* the ini's tickhz as written (frametiming.c holds the
                                        * effective rate, which GE_TICKHZ can override - the
                                        * Port Options page must show and save the ini value) */
@@ -598,7 +601,7 @@ s32 portTrueEnemyRocketsEnabled(void)
     return s_CfgTrueEnemyRockets;
 }
 
-/** midas.ini [display] show_fps: the bondview FPS/TPS overlay reads this.
+/** midas.ini [display] show_fps: the bondview FPS digits read this.
  * GE_SHOWFPS env overrides either way (headless A/B, capture runs). */
 s32 portVideoShowFps(void)
 {
@@ -839,8 +842,8 @@ static void videoApplyVolumes(void);
  * 120 fps cap means a 120 Hz tick.
  *
  * Two things this deliberately will not do:
- *  - Take the tick below 60. The engine's authored rate is 60 and the raised-tick work
- *    (docs/port/tick-rate-binding.md) only goes up; a 30 fps cap still gets a 60 Hz sim.
+ *  - Take the tick below 60. The engine's authored rate is 60, and the raised-tick work
+ *    (docs/port/tick-and-field-accounting.md 13) only goes up; a 30 fps cap still gets 60 Hz.
  *  - Override tickhz=hw, the console's own frame pacing (an expert ini-only mode). */
 static void videoPersistDerivedTick(void);
 static int videoSetDisplayOption(const char *key, const char *value);
@@ -885,6 +888,10 @@ static void videoCoupleTickToMaxFps(void)
         {
             videoSetDisplayOption("tickhz", "hw");
         }
+        if (s_CfgTickLoadDone)
+        {
+            videoPersistDerivedTick(); /* a live change records itself at once, hw included */
+        }
         return;
     }
     if (s_CfgTickHz == -1)
@@ -917,24 +924,36 @@ static void videoCoupleTickToMaxFps(void)
 }
 
 /** Write the derived tick back once when an existing midas.ini disagrees, so a stale hand-set
- * tickhz does not mislead readers. A file without a tickhz line gets none, and
- * hw is never touched. */
+ * tickhz does not mislead readers. A file without a tickhz line gets none.
+ *
+ * This includes writing the literal `hw` when maxfps is -1. It did not, until F3-A: the
+ * function returned early on the resolved -1, so a session that ran hw pacing left whatever
+ * numeric tickhz the file already had, and the file described a different mode from the one
+ * that ran. That is the invariant docs/port/tick-and-field-accounting.md §11.3 states - the
+ * writer must never emit a pair the loader resolves differently from what was running - and
+ * it is what the loader's own tickhz=hw arm records as written (-1). */
 static void videoPersistDerivedTick(void)
 {
-    char buf[16];
+    char wasbuf[PORT_TICK_INI_BUF];
+    const char *was = portTickIniValue(s_CfgTickAsWritten, wasbuf, sizeof(wasbuf));
+    const char *val = portTickIniValue(s_CfgTickHz, s_CfgTickBuf, sizeof(s_CfgTickBuf));
     const char *keys[1];
     const char *vals[1];
 
-    if (s_CfgTickHz == -1 || !s_CfgTickSeenInIni || s_CfgTickHz == s_CfgTickAsWritten)
+    if (!s_CfgTickSeenInIni || s_CfgTickHz == s_CfgTickAsWritten || val == NULL)
     {
-        return;
+        return; /* no tickhz line to correct, already in step, or no text for this state */
     }
-    SDL_snprintf(buf, sizeof(buf), "%d", s_CfgTickHz);
     keys[0] = "tickhz";
-    vals[0] = buf;
-    portConLogf("ge: video: tickhz follows maxfps - midas.ini %d -> %d\n", s_CfgTickAsWritten, s_CfgTickHz);
-    portIniWriteStrs("[display]", keys, vals, 1);
-    s_CfgTickAsWritten = s_CfgTickHz;
+    vals[0] = val;
+    /* Only claim the file was corrected if it was: portIniWriteStrs no-ops under GE_WINDOW /
+     * GE_NOINISAVE, and recording the value anyway would leave the file stale for the rest of
+     * the session with nothing that retries it. */
+    if (portIniWriteStrs("[display]", keys, vals, 1))
+    {
+        portConLogf("ge: video: tickhz follows maxfps - midas.ini %s -> %s\n", was != NULL ? was : "(none)", val);
+        s_CfgTickAsWritten = s_CfgTickHz;
+    }
 }
 
 /* [display] classic_res .. classic_hitches: which parts Classic Mode applies
@@ -1059,6 +1078,17 @@ static int videoLowResLines(const char *value)
     return 1080;
 }
 
+/** The tick rate a `tickhz` text denotes, as written: -1 for hw pacing, else the number.
+ *
+ * One rule, used by both sides that need it - the handler below decides on it, and the ini
+ * parse loop records the FILE's claim with it. They must agree: the writer compares the
+ * recorded claim against the running rate, so a second spelling of "is this hw" would let them
+ * drift and silently stop correcting the file. */
+static int videoTickTextValue(const char *text)
+{
+    return (SDL_strcasecmp(text, "hw") == 0 || SDL_atoi(text) == -1) ? -1 : SDL_atoi(text);
+}
+
 static int videoSetDisplayOption(const char *key, const char *value)
 {
     if (SDL_strcasecmp(key, "window_width") == 0)  { s_CfgWindowW = SDL_atoi(value); return 1; }
@@ -1132,8 +1162,13 @@ static int videoSetDisplayOption(const char *key, const char *value)
     if (SDL_strcasecmp(key, "tickhz") == 0)        {
         /* "hw" / -1: the console's frame pacing on the 60 Hz sim
          * (frametiming.c portTickHwPace); room_cache is forced off with it
-         * below - the fill model reads the interpreter's triangles */
-        if (SDL_strcasecmp(value, "hw") == 0 || SDL_atoi(value) == -1)
+         * below - the fill model reads the interpreter's triangles.
+         *
+         * This handler does NOT record what midas.ini said (s_CfgTickAsWritten):
+         * videoCoupleTickToMaxFps calls it with "hw" while the file is still
+         * being read, so a recording here would claim the file said hw when it
+         * said a number. The ini parse loop records the file's own line. */
+        if (videoTickTextValue(value) == -1)
         {
 #ifdef GE_XBOX
             /* the console runs the N64's 60 Hz cadence and never hw
@@ -1144,11 +1179,6 @@ static int videoSetDisplayOption(const char *key, const char *value)
             s_CfgTickHz = 60;
             portTickSetHwPace(0);
             portTickSetHz(60);
-            if (!s_CfgTickLoadDone)
-            {
-                s_CfgTickSeenInIni = 1;
-                s_CfgTickAsWritten = -1;
-            }
             return 1;
 #endif
             s_CfgTickHz = -1;
@@ -1161,18 +1191,10 @@ static int videoSetDisplayOption(const char *key, const char *value)
                 s_CfgRoomCache = 0;
                 portRoomCacheSetMode(0);
             }
-            if (!s_CfgTickLoadDone)
-            {   /* an ini tickhz=hw: record it as the numeric arm does, or
-                 * leaving hw via Max FPS never rewrites it. */
-                s_CfgTickSeenInIni = 1;
-                s_CfgTickAsWritten = -1;
-            }
             return 1;
         }
         portTickSetHwPace(0);
         s_CfgTickHz = SDL_atoi(value);
-        s_CfgTickSeenInIni = 1;
-        s_CfgTickAsWritten = s_CfgTickHz;
 #ifdef GE_XBOX
         /* More than one gfx task per vblank queues two flips in pbkit's ring
          * and tears the display, so the console runs the N64's
@@ -2298,6 +2320,10 @@ static void videoWriteDefaultIni(void)
     if (s_CfgTickHz == -1)
     {
         fprintf(f, "tickhz=hw\n");
+        /* the file now HAS a tickhz line, exactly as the numeric arm records it, or
+         * videoPersistDerivedTick would rewrite it on the first live maxfps change */
+        s_CfgTickSeenInIni = 1;
+        s_CfgTickAsWritten = -1;
     }
     else
     {
@@ -3267,6 +3293,18 @@ static void videoLoadConfig(void)
                 && !romdataIsIniKey(key) /* [data] rom=: romdata.c reads it itself, section-aware */)
             {
                 portConLogf("ge: midas.ini: unknown control \"%s\"\n", key);
+            }
+            else if (SDL_strcasecmp(key, "tickhz") == 0)
+            {
+                /* What THIS FILE says, recorded here and nowhere else. The tickhz handler in
+                 * videoSetDisplayOption cannot do it: videoCoupleTickToMaxFps calls that handler
+                 * with "hw" while the file is still being read, and recording that would claim the
+                 * file said hw when it said a number - which is how F3-A stayed invisible, and
+                 * then made the first fix order-dependent (it worked only when maxfps came
+                 * first). This is the value as written, before any clamp: if the file's number is
+                 * not what runs, the writer has to correct it. */
+                s_CfgTickSeenInIni = 1;
+                s_CfgTickAsWritten = videoTickTextValue(val);
             }
         }
     }

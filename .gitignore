@@ -271,9 +271,12 @@ build_asan_docker/
 releases/
 build_linux/
 build_deck/
+build_macos/
+build_native_tests/
 
 # Local-only developer back-story notes (debug history moved out of source comments)
 docs/devnotes/
 
 # the docs live in the private repo
-/docs/
+/docs/*
+!/docs/macos.md

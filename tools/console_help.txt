@@ -1,0 +1,340 @@
+PROJECT MIDAS - CONSOLE HELP
+============================
+
+The in-game console opens with ` (the key left of 1, also called tilde/~).
+Type a command and press Enter. Up/Down recall earlier lines, PgUp/PgDn/Home/
+End scroll, and `help` lists every command.
+
+Most settings are also in the menus. The commands here are the ones with no
+menu row: diagnostics that answer "why is it doing that?" when something
+misbehaves. None of them change how the game plays, and none are saved to
+midas.ini - a restart puts them back to off.
+
+
+==============================================================================
+Audio pump diagnostics:  cl_audio_pump  and  cl_audio_log
+==============================================================================
+
+WHAT THE AUDIO PUMP IS
+
+  The game's audio is synthesised on the CPU by the N64 sound library and
+  handed to your sound card. The code that does this once per pass of the
+  game loop is called "the pump". It decides how much audio to make each
+  time it runs, and the queue is the backlog of audio waiting to be played.
+
+  Two things can go wrong, and they sound different:
+
+    crackling, popping   the backlog ran out, so the card played silence in
+                         the middle of a sound. The queue was too shallow or
+                         the pump delivered too little.
+
+    delayed sound        the backlog grew too large, so what you hear is old.
+                         The queue was too deep or the card is not draining.
+
+  These two commands show the numbers behind either symptom.
+
+
+CL_AUDIO_PUMP - the on-screen block
+
+  cl_audio_pump 0|1     turn it off or on
+  cl_audio_pump         report the current state without changing it
+
+  On, a block of six lines appears in the top-left corner, where the FPS
+  number normally sits. Player 1's view only, in split-screen.
+
+  THE BLOCK REPLACES THE FPS COUNTER. It shows the frame rate itself, so if you
+  also have cl_showfps 1 set, the plain FPS digits are hidden while the block
+  is on and come back when you turn it off. Showing both would print the same
+  number twice.
+
+  It is not saved. It is off after every restart.
+
+
+CL_AUDIO_LOG - the same numbers, to a file
+
+  cl_audio_log 0|1      start or stop writing the log
+  cl_audio_log          report whether it is running
+
+  On, the same figures are written once a second to
+
+      Data/Logs/audio_pump.log
+
+  beside your saves. The file starts fresh each time you turn it on, begins
+  with a legend naming every field, and is written out immediately, so if the
+  game crashes the last line before the crash is still there.
+
+  Roughly 10 KB a minute. The log and the on-screen block are independent: you
+  can run either without the other.
+
+  Use the log for a bug report. One line a second for the length of the
+  problem is far more useful than a description, and it can be compared
+  against the log line the game already prints every 10 seconds.
+
+
+WHY THE LOG CARRIES MORE THAN THE SCREEN
+
+  The screen is for glancing, so each value gets exactly one unit - whichever
+  one makes the question "is this healthy?" answerable without arithmetic.
+  The log is read by someone chasing a specific defect, so it keeps the exact
+  figures too. Two fields carry extra units, and two differ in form:
+
+    que    the screen prints bytes; the log prints bytes AND the ms of audio
+           they represent. 3556B is 40ms, and 40ms is what you actually hear
+           as delay. Bytes alone answer "is the pump right?"; ms answers
+           "why does the sound lag?".
+
+    snd    the screen prints ms; the log prints the raw sample counts AND the
+           ms. One sample at 22050 Hz is 0.045 ms, so millisecond figures
+           round away anything smaller than about 22 samples. A slow leak of a
+           few samples per pump is invisible on the screen and obvious in the
+           counts, which is exactly the kind of fault a log exists to catch.
+
+    pmp    the screen abbreviates thousands once the rate reaches ten thousand
+           (PMP 193k/s); the log always prints the plain rate in /s
+           (pmp 193000/s). The same measurement, two spellings.
+
+    t=     the log leads with milliseconds since logging began; the screen has
+           no clock. Everything else on the line is in the same order.
+
+  Both forms are in the line, so a log line can be read side by side with a
+  screenshot taken at the same moment. Three caveats: the log writes once a
+  second and the block draws when it draws, so the 500 ms rate windows roll
+  independently and SND, PMP and RND can differ by a whole window - compare
+  these loosely, not to the millisecond. And the screen's k/s is truncated to
+  thousands, so it can sit up to 999 below the log's exact figure. Finally,
+  FPS, tk, f/s and f/t are sampled once per drawn frame, so while the game is
+  not drawing - a stage load, a long stall - they repeat the last value they
+  had while the pump columns carry on updating. A frozen FPS or f/s in a load
+  is a still frame, not a measurement.
+
+
+TIMESTAMPS
+
+  Each line starts with t=, milliseconds since logging began. That is the
+  measure to use for intervals: it is monotonic, so it can never jump
+  backwards, and it is unaffected by the system clock being corrected mid-run.
+
+  The header also records the wall-clock instant logging started:
+
+      # started 2026-10-25 00:29:24 (local); t= below is ms since this instant
+
+  Add t= to that instant to date any line. This matters because nothing else
+  the game logs carries a wall clock: it is what lets you line a line up with
+  a crash.log timestamp, with a ge: stats line in the run log, or with a
+  user's "it went wrong around 21:40". Wall clock on every line was avoided on
+  purpose - it would only add repetition, and a clock correction mid-run would
+  make the file look out of order.
+
+
+READING THE BLOCK
+
+  Examples, all measured in a running level. Read down the f/s column first:
+  it is 60.0 in every one of them, which is the whole point.
+
+  Vsync on, no frame cap, on a 60 Hz panel:
+
+      60fps 60tk 60.0f/s 1.00f/t
+      PMP 193k/s RND 130/s
+      QUE 5312/5312B CAP 16384B
+      SND 505ms/500ms
+      DRY 0 OVER 0 SKIP 0 FRC 0
+      STALL 0 CLK 0ms DEV 22050Hz
+
+  Vsync off, no frame cap - frames cheap enough to draw far more often than
+  the game updates, so 738 ticks a second each carry a twelfth of a field:
+
+      738fps 738tk 60.0f/s 0.08f/t
+      PMP 177k/s RND 166/s
+      QUE 4032/4032B CAP 16384B
+      SND 505ms/500ms
+      DRY 0 OVER 0 SKIP 0 FRC 0
+      STALL 0 CLK 0ms DEV 22050Hz
+
+  A heavy view where a frame overruns a field: four fields per tick, and the
+  tick rate drops to 15 while game time stays at 60. This is the shape the
+  N64 itself had, and the shape Hardware pacing reproduces on purpose:
+
+      15fps 15tk 59.8f/s 4.00f/t
+      PMP 60/s RND 60/s
+      QUE 5824/5824B CAP 16384B
+      SND 510ms/515ms
+      DRY 0 OVER 0 SKIP 0 FRC 0
+      STALL 0 CLK 0ms DEV 22050Hz
+
+  Note PMP across the three: 193k, 177k, 60. It does not follow fps, and in the
+  last one it is low only because the loop is blocked waiting on the frame.
+
+  The log file has the same figures plus a few more units - see WHY THE LOG
+  CARRIES MORE THAN THE SCREEN below.
+
+  UNITS. Every value carries its own: fps, tk, f/s (fields per second) and f/t
+  (fields per tick) for the frame and simulation rates, /s for pump counts, B
+  for bytes, ms for milliseconds of audio, Hz for the device rate. DRY, OVER,
+  SKIP and FRC are counts of events and have no unit.
+
+  Field by field. Everything except QUE, CAP, STALL, CLK and DEV is measured
+  over the last half second, so it settles rather than flickering; those five
+  describe the most recent pump only.
+
+  FPS       Frames drawn per second.
+  TK        Simulation ticks per second. Max FPS sets the rate it aims for,
+            but a tick is taken only once the previous frame has been
+            presented, so TK tracks FPS whenever drawing is what the machine
+            is limited by - in practice the two read the same number most of
+            the time. Three things hold TK below the rate you set. A display
+            that cannot present that often: with vsync on, a 60 Hz panel
+            allows 60 ticks a second, so the default Max FPS of 120 still
+            reads 60tk and nothing is wrong. A machine that cannot keep up:
+            with vsync off, tk below the rate you set means that - and note it
+            is the renderer that is behind, not the simulation, which is why
+            f/s can read 60.0 beside it. Or Hardware pacing doing its job:
+            with Max FPS -1 the loop holds each frame for the fields the
+            console would have needed, so 15tk is the console's own rate and
+            not a slow machine. In every case TK is not a measure of game
+            speed - read f/s for that.
+  f/s       FIELDS PER SECOND. Sixty of these make a second of game time. 60.0
+            means the game is running at the right speed - at any tick rate and
+            any frame rate. THIS IS THE NUMBER TO TRUST. A few percent either
+            side of 60.0 is window jitter, not drift: the figure is measured
+            over the last half second, which is never exactly half a second,
+            so healthy readings in practice run from about 59 to about 63.
+            Below that the game is in slow motion: it is losing real time, and
+            the music will drift ahead of the world because the music runs on
+            real time and the world does not. It falls to near 0 - under about
+            2.0 - while the game is paused or the controls are locked, because
+            no game time is passing; correct, not a fault. It does the same
+            during a stage load, and for one window after a frame so long that
+            no tick landed inside the half-second window (a multi-second
+            hitch, not an ordinary 20ms frame - those show up in f/t, above).
+            If it sits under 2.0 while you are playing and the world is
+            moving, that IS a fault - attach the log.
+  f/t       Fields each tick absorbed. 1.00 means one video field per tick
+            (a normal 60 fps frame). Above 1.00 means frames are taking longer
+            than a field, so each tick carries more game time - which is
+            exactly what the N64 did when it slowed down, and what Hardware
+            pacing reproduces. Below 1.00 means a raised tick rate is stepping
+            inside one field. 0.00 is not a rate: it means no game time was
+            credited in the half-second window - paused, controls locked, or
+            the middle of a very long frame. A stage load usually still lands
+            one tick, so it commonly reads above zero there rather than 0.00.
+            tk can still read 60 while this is 0.00: the ticks ran, they just
+            advanced no game time. Read f/s instead.
+  PMP       Pump calls per second. This is the rate the game's wait loop came
+            round, not the frame rate, and not a measure of anything on its
+            own. It is high when the loop is spinning on the renderer and low
+            when it is parked: in the pacer's sleep, held by Hardware pacing's
+            frame hold, or blocked in a stage load. That is why it can be high
+            at 0 fps and low at 60 fps, and why it says nothing about sound.
+  RND       Of those calls, how many actually produced audio. This is the
+            useful half of PMP: the rate the mixer really ran at, settled at
+            whatever the device drains at. Typically 56-60/s when the loop is
+            held at 15-20 fps and 120-170/s in free-running play - a range, not
+            a target. RND on its own is neither good nor bad; read SND to see
+            whether that rate was enough.
+  QUE a/b   Bytes of audio waiting to play (a), against the depth the pump is
+            aiming for (b). a slightly above b is normal. a far below b means
+            the card is outrunning the pump.
+  CAP       The ceiling for QUE, in bytes. It grows when the target grows, so a
+            low frame rate can still queue enough audio.
+  SND a/b   Milliseconds of audio produced in the last half second (a), against
+            the half second of real time it was worth (b). THESE SHOULD MATCH.
+            This is the single most important line: matching means audio is
+            keeping pace with real time. a persistently short means the sound
+            is starving, and you will hear it.
+  DRY       Pumps that found the queue empty: the card played silence. Every
+            one is an audible gap. Should be 0. When it happens, the pump
+            automatically keeps more audio queued afterwards, so a few DRY
+            during a stage load are expected and self-correcting.
+  OVER      Frames refused because they would not fit under CAP: the backlog
+            was full. Should be 0. Nonzero means audio is being made faster
+            than the card is playing it.
+  SKIP      Frames the audio validator rejected, played as silence instead.
+            Should be 0. Nonzero is a bug in the sound output, not a pacing
+            problem - worth reporting with the log.
+  FRC       "Forced" frames, used to keep the music sequencer moving during
+            track changes. A few at a track change is normal. A large number
+            that keeps climbing is not.
+  STALL     1 = the sound device has played nothing for 2 seconds. Should be
+            0. At 1 the pump stops trusting the device and runs the game's
+            audio clock on wall time, and after 2 more seconds it closes and
+            reopens the device to retry.
+  CLK       Wall-clock credit in milliseconds of audio. Only nonzero when no
+            device is pacing (no card, or a stalled one) and the samples are
+            being discarded. 0ms means the device is setting the pace, which
+            is what you want.
+  DEV       The rate the device was opened at, in Hz, or 0Hz if no device is
+            open.
+
+
+THE HITCH LINE
+
+  Separate from the audio columns, the game can explain a slow frame on the
+  run log (Data/Logs/ge_direct.log on Windows; stdout elsewhere):
+
+      ge: hitch: 894.0 ms frame (stage 33, tick60, render thread off) |
+        render: gl 890.2 swap 1.7 lim 0.0 idle 2.0 | sim: longest 890.4 ms,
+        pacer 0.0 ms, 1 tick(s) 8 fld credit 8 of 53 pacer asked 4 |
+        draws 201 | no timed events
+
+  It is off by default (frames of 25 ms or more only). Turn it on and off
+  with cl_hitchms - `cl_hitchms 1` logs every frame, `cl_hitchms 0` silences
+  it; the value is not saved to midas.ini. The line divides the frame into
+  render time (gl / swap / the max-fps limiter / idle), simulation time (the
+  longest stretch of game code, how long the pacer slept, ticks and fields
+  credited) and a count of what was loaded.
+
+  Two fields need explaining, and neither is a yardstick for the other:
+
+  credit a of b   The stall cap fired. A tick measured b fields of elapsed
+            time and was allowed to advance a. Its presence means simulated
+            time was dropped - b minus a fields of it - and a is the cap that
+            applied: normally 8, the default. This is the per-frame evidence of
+            the game running in slow motion; f/s shows the same loss only
+            afterwards, averaged away. Absent from the line means no time was
+            dropped.
+
+  pacer asked n   Hardware pacing only (Max FPS -1): the fields the N64 would
+            have needed to draw the frame, which the game then waits for. It
+            is not a prediction of how long the frame took - on a slow
+            renderer the frame takes far longer than n, and that is exactly
+            when credit appears beside it.
+
+  How they fit together. Hardware pacing waits for n fields, so those n are
+  intended time and the cap must not cut them short: under hardware pacing
+  the cap yields to the hold, and a frame that was one long hold reads
+  `credit 12 of 57 pacer asked 12` - the 12 credited is the hold, and the
+  remaining 45 fields are the renderer being slower still. A line reading
+  `credit 8 of 53 pacer asked 4` is the other case: the frame cost 53 fields
+  because the renderer was slow, but the game only asked for 4, so 8 is a
+  genuine limit and the missing 45 fields really are thrown away. Read pacer
+  asked before concluding that the cap is at fault.
+
+  If you are reporting a frame-rate or slow-motion problem rather than a
+  sound one, this line is the one to attach: cl_hitchms 1, reproduce, and send
+  the `ge: hitch:` lines with your audio log.
+
+
+WHAT TO REPORT
+
+  For any sound problem, include:
+
+    - Data/Logs/audio_pump.log, captured with cl_audio_log 1 running while the
+      problem happens
+    - the rough time you saw the problem, or the t= value from the line where
+      it started - the header's started stamp plus t= dates it exactly
+    - whether the sound was crackling, lagging, or absent
+    - your platform (Windows / Linux / macOS) and your stage or menu
+
+  The useful details are: SND a running below SND b, DRY above zero, OVER above
+  zero, STALL at 1, or DEV at 0. If all of those look healthy while the sound
+  is still wrong, the fault is below the pump - in the device or the driver -
+  and the log says so, which is worth knowing.
+
+
+A NOTE ON HIGH LATENCY AT LOW FRAME RATES
+
+  The pump is driven from the game loop, and what it must bridge is the
+  measured time between two pumps, which grows when a frame takes longer to
+  present. At a low frame rate that backlog is latency: continuous sound a
+  fraction of a second behind beats crackling. At single-digit frame rates
+  QUE and CAP grow accordingly, and that is by design, not a fault.

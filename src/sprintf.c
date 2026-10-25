@@ -1,11 +1,12 @@
 #include <stdarg.h>
+#include "libultra/libc/xstdio.h"
 #include <ultra64.h>
 /*#include <stddef.h>*/
 
 
 
-char *proutSprintf(char *dst, const char *src, size_t count) {
-    return (char *) memcpy((u8 *) dst, (u8 *) src, count) + count;
+u8 *proutSprintf(u8 *dst, const u8 *src, size_t count) {
+    return (u8 *)memcpy(dst, src, count) + count;
 }
 
 int sprintf(char *dst, const char *fmt, ...) {

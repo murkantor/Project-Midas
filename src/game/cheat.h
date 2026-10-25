@@ -1,6 +1,9 @@
 #ifndef _CHEAT_BUTTONS_H_
 #define _CHEAT_BUTTONS_H_
+
 #include <ultra64.h>
+#include <bondconstants.h>
+#include <bondtypes.h>
 
 // This shows up a lot but not quite sure what it represents.
 #define CHEAT_INPUT_BUFFER_SIZE    20

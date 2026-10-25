@@ -267,8 +267,8 @@ void        chrDetectRooms(ChrRecord *);
 void        chrSetMoving(ChrRecord *guard,s32 param_2);
 f32         getAnimationRate(void);
 void        setAnimationRate(f32);
-PropRecord *init_GUARDdata_with_set_values(PropRecord *, Model *, coord3d *, f32 arg2, StandTile * arg3, struct AIListRecord *arg4);
-PropRecord *chrAllocate(struct Model * arg0, coord3d * arg1, f32 arg2, StandTile * arg3, s32 arg4);
+PropRecord *init_GUARDdata_with_set_values(PropRecord *, Model *, coord3d *, f32 arg2, StandTile * arg3, AIRecord *arg4);
+PropRecord *chrAllocate(struct Model * arg0, coord3d * arg1, f32 arg2, StandTile * arg3, AIRecord *arg4);
 void        chrSetHiddenToRandom(ChrRecord *arg0);
 void        chrRemoved7F022E1C(f32 arg0);
 void        chrDecrementAnimationTablePointerCount(void);
@@ -295,7 +295,7 @@ void        propExecuteTickOperation(PropRecord *prop, TICKOP op);
 //tentative signature
 s32         sub_GAME_7F01FC10(Model *, coord3d *, coord3d *, f32 *);
 void        chrCreateBloodStain(Model *arg0, s32 arg1, ModelNode *arg2, struct coord3d *arg3);
-void        chrpropAddBulletHit(struct ShotData *shotdata, PropRecord *prop, f32 dist, s32 hitpart, ModelNode *node, struct HitThing *hitthing, s32 room, s32 unk44, Model *model, bool countsAsPenetration, s32 blocksFurtherHits);
+void        chrpropAddBulletHit(struct ShotData *shotdata, PropRecord *prop, f32 dist, s32 hitpart, ModelNode *node, struct HitThing *hitthing, s32 room, ModelNode *unk44, Model *model, bool countsAsPenetration, s32 blocksFurtherHits);
 void        chrTestHit(PropRecord *prop, ShotData *shotdata);
 void        sub_GAME_7F03E134(PropRecord* p);
 
@@ -303,4 +303,20 @@ void        sub_GAME_7F03E134(PropRecord* p);
 bool chrCanUseDKModeScaling(s32 bodynum, s32 headnum);
 #endif
 
+Vertex *get_ptr_allocated_block_for_vertices(s32 count);
+
+
+void cleanupGuardData(void);
+s32 chrGetNumFree(void);
+void set_show_patrols_flag(s32 flag);
+s32 get_show_patrols_flag(void);
+void chrpropDeregisterRoom(PropRecord* prop, s16 room);
+void removed_debug_roomblocks_feature(void);
+s32 propDoorGetCdTypes(PropRecord* prop);
+bool doorIsPadlockFree(DoorRecord* door);
+void chrpropDetach(PropRecord* prop);
+s32 sub_GAME_7F03DB70(s32* roomids1, s32* roomids2);
+
+
+s32 chrTick(PropRecord *prop);
 #endif

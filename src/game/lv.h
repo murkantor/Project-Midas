@@ -82,4 +82,7 @@ s32        sub_GAME_7F0BD8F0(void);
 f32        lvlGetCurrentMultiPlayerSec(void);
 f32        lvlGetCurrentMultiPlayerMin(void);
 
+
+void sub_GAME_7F0BD8FC(s32 arg0);
+
 #endif

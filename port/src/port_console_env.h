@@ -3,13 +3,17 @@
  * variable, shown by the console's `harness` command (most are read once at
  * init, so it can only report them, not toggle them).
  *
- * Regenerate from the repo root and paste the output between the braces below.
- * The grep takes every "GE_..." string literal, so knobs read through helpers
- * or tables (inputEnvOverride, videoEnvKnob, romdata.c's env[] table) are
- * listed too; keep -a so files containing a NUL byte are still searched.
- *   grep -rhoa '"GE_[A-Z0-9_]*"' port/src src port/fast3d \
- *     | tr -d '"' | sort -u \
- *     | awk '{printf "    \"%s\",\n", $0}'
+ * Regenerate from the repo root with:
+ *   python3 scripts/port/regen_console_env.py
+ *
+ * It rewrites the array between the braces and sorts bytewise (LC_ALL=C), so the
+ * diff shows only additions. It used to be a grep pasted in by hand, and by
+ * 2026-10-25 the pasted copy was 20 entries behind the tree - the two hw-pacing
+ * load knobs among them. Prefer the script to the paste.
+ *
+ * The underlying grep takes every "GE_..." string literal, so knobs read through
+ * helpers or tables (inputEnvOverride, videoEnvKnob, romdata.c's env[] table) are
+ * listed too; it keeps -a so files containing a NUL byte are still searched.
  */
 #ifndef PORT_CONSOLE_ENV_H
 #define PORT_CONSOLE_ENV_H
@@ -26,6 +30,7 @@ static const char *const sPortConEnvNames[] = {
     "GE_ALLROOMS",
     "GE_ALWAYSCROSSHAIR",
     "GE_ANIM_ZERO",
+    "GE_AUDIODBG",
     "GE_AUTOBTN",
     "GE_AUTOBTN2",
     "GE_AUTOFIRE",
@@ -39,12 +44,14 @@ static const char *const sPortConEnvNames[] = {
     "GE_BINDKEY",
     "GE_BLOCKDBG",
     "GE_BLOCKTRACE",
+    "GE_BORDERLESS_EXACT",
     "GE_CALIBRATE",
     "GE_CAPTUREPAD",
     "GE_CHEATS",
     "GE_CHRDUMP",
     "GE_CLIPDBG",
     "GE_COLAUDIT",
+    "GE_COMPOSITE_FREQ",
     "GE_COMPSWIZ",
     "GE_CONCMD",
     "GE_CONSOLE",
@@ -52,13 +59,17 @@ static const char *const sPortConEnvNames[] = {
     "GE_CURSOR",
     "GE_CUTDBG",
     "GE_DEBUGPOS",
+    "GE_DEC_CLIP",
     "GE_DEC_PULL",
+    "GE_DEC_TOL",
     "GE_DEC_TRACE",
     "GE_DEC_ZBIAS",
     "GE_DEMO",
     "GE_DEMODIAG",
     "GE_DEMOPOS",
     "GE_DEMOSTRICT",
+    "GE_DETAILF",
+    "GE_DETAILHACK",
     "GE_DIFF",
     "GE_DINPUT",
     "GE_DMGDBG",
@@ -70,6 +81,7 @@ static const char *const sPortConEnvNames[] = {
     "GE_DXLU_GROUPLOG",
     "GE_DXLU_TRACE",
     "GE_EDGEINSET",
+    "GE_ENEMYFF_LOG",
     "GE_FAKEMOUSE",
     "GE_FAKEUPLOADFAIL",
     "GE_FARCLIP",
@@ -92,14 +104,17 @@ static const char *const sPortConEnvNames[] = {
     "GE_GUNSND_OVERLAP",
     "GE_GUN_AUDIT",
     "GE_HANDPOSEDBG",
+    "GE_HELPTEXT",
     "GE_HIDAPI",
-    "GE_HITCHMS",
     "GE_HIGHSCAN",
+    "GE_HITCHMS",
     "GE_HUDEDGES",
     "GE_HUDGAUGE",
     "GE_HUDSCALE",
     "GE_HWCAL",
     "GE_HWDBG",
+    "GE_HWLOAD",
+    "GE_HWLOAD_SCALE",
     "GE_HWMIPMAPS",
     "GE_HWSCALE",
     "GE_INPUTPLAY",
@@ -111,14 +126,17 @@ static const char *const sPortConEnvNames[] = {
     "GE_JOYPORT_AUTO",
     "GE_JOYPORT_DBG",
     "GE_KILLBOND",
+    "GE_LANG",
     "GE_LEANDBG",
     "GE_LIGHTDBG",
+    "GE_LINEMODE_GAIN",
     "GE_LISTPADS",
     "GE_LOGOMODEL",
     "GE_LOSDBG",
     "GE_LOWRES",
     "GE_MENU",
     "GE_MISSIONTIMER",
+    "GE_MODELTIME",
     "GE_MODEL_AUDIT",
     "GE_MOUSEGATE",
     "GE_MP",
@@ -128,6 +146,8 @@ static const char *const sPortConEnvNames[] = {
     "GE_MPPIN",
     "GE_MPPLAYERS",
     "GE_MPSCENARIO",
+    "GE_MPSET",
+    "GE_MPTEAMS",
     "GE_MPWSET",
     "GE_N64AA",
     "GE_N64AA_SOFT",
@@ -139,6 +159,7 @@ static const char *const sPortConEnvNames[] = {
     "GE_NO1964HACK",
     "GE_NOAIGOV",
     "GE_NOBLOODMIRROR",
+    "GE_NOCOMPOSITE",
     "GE_NOCVGSEL",
     "GE_NODELTASMOOTH",
     "GE_NODIRECTLOG",
@@ -148,6 +169,7 @@ static const char *const sPortConEnvNames[] = {
     "GE_NOINISAVE",
     "GE_NOINPUT",
     "GE_NOMASKCROP",
+    "GE_NOMASKWRAP",
     "GE_NOMSGBOX",
     "GE_NOPIXFOG",
     "GE_NORECTCLAMP",
@@ -185,6 +207,7 @@ static const char *const sPortConEnvNames[] = {
     "GE_RAMPDBG",
     "GE_RAPHDBG",
     "GE_RAPHNET_SYNC",
+    "GE_RARECULL",
     "GE_RAWINPUT",
     "GE_RDP_LOGF",
     "GE_RECTCLAMPDBG",
@@ -249,6 +272,7 @@ static const char *const sPortConEnvNames[] = {
     "GE_STAGE_AFTER",
     "GE_STALLTEST",
     "GE_STEREOPAN",
+    "GE_SWIRLDBG",
     "GE_TANKDBG",
     "GE_TEXCHURN",
     "GE_TEXDBG",

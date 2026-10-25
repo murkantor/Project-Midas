@@ -62,19 +62,19 @@ void romCopy(void *target, void *source, u32 size)
  * romCopyAligned
  * aligns data, does a romCopy(), then returns aligned pointer to target
  */
-s32 romCopyAligned(void *target, void *source, s32 length)
+uintptr_t romCopyAligned(void *target, void *source, s32 length)
 {
     s32 target_offset;
     s32 *target_aligned;
     s32 *source_aligned;
     s32 *source_offset;
 
-    source_aligned = align_addr_even((s32)source);
-    source_offset = (s32)source - (s32)source_aligned;
-    target_aligned = ALIGN16_a((s32)target);
+    source_aligned = align_addr_even((uintptr_t)source);
+    source_offset = (uintptr_t)source - (uintptr_t)source_aligned;
+    target_aligned = ALIGN16_a((uintptr_t)target);
     target_offset = source_offset;
-    romCopy(target_aligned, source_aligned, ALIGN16_a((s32)source_offset + length));
-    return ((s32)target_aligned + target_offset);
+    romCopy(target_aligned, source_aligned, ALIGN16_a((uintptr_t)source_offset + length));
+    return ((uintptr_t)target_aligned + target_offset);
 }
 
 /**

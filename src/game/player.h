@@ -108,4 +108,10 @@ s32 get_player_position_in_shuffled(s32 current_player_num);
 void sub_GAME_7F09B368(enum GUNHAND hand);
 void sub_GAME_7F09B398(enum GUNHAND hand);
 
+
+void set_favorite_weapon_for_every_player(void);
+void cleanupplayersoundrelated(void);
+PROP getPropForHeldItem(ITEM_IDS arg0);
+void default_player_perspective_and_height(void);
+
 #endif
