@@ -245,8 +245,14 @@ static void set_fullscreen(bool on, bool call_callback) {
         }
         SDL_SetWindowFullscreen(wnd, on ? fullscreen_flag : 0);
     } else {
+#ifdef __APPLE__
+        /* Cocoa must own desktop fullscreen so it hides the menu bar and Dock
+         * and restores them when the window loses fullscreen. */
+        SDL_SetWindowFullscreen(wnd, on ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+#else
         SDL_SetWindowFullscreen(wnd, 0);
         set_borderless_fullscreen(on);
+#endif
     }
     if (call_callback && on_fullscreen_changed_callback) {
         on_fullscreen_changed_callback(on);
@@ -345,6 +351,9 @@ static void gfx_sdl_init(const struct GfxWindowInitSettings *set) {
                 window_height = got.h;
             }
         } else {
+#ifdef __APPLE__
+            flags |= SDL_WINDOW_FULLSCREEN_DESKTOP;
+#else
             // borderless window over the display (see set_borderless_fullscreen);
             // the remembered monitor first, display 0 as the fallback
             SDL_Rect r;
@@ -367,6 +376,7 @@ static void gfx_sdl_init(const struct GfxWindowInitSettings *set) {
                 flags = (flags & ~SDL_WINDOW_RESIZABLE) | SDL_WINDOW_BORDERLESS;
                 borderless_state = true;
             }
+#endif
         }
     }
 
@@ -392,7 +402,11 @@ static void gfx_sdl_init(const struct GfxWindowInitSettings *set) {
         { 2, 1, SDL_GL_CONTEXT_PROFILE_COMPATIBILITY }, // 2.1: absolute last resort, will still require GLSL130 as an extension
     };
 
+#ifdef __APPLE__
+    u32 verstart = 2; /* macOS exposes modern OpenGL through core profiles. */
+#else
     u32 verstart = 1;
+#endif
     const u32 verend = sizeof(glver) / sizeof(*glver);
     const char *verstr = sysArgGetString("--gl-version");
     if (verstr && *verstr) {
@@ -686,7 +700,7 @@ static void gfx_sdl_handle_events(void) {
                         const char *v = (const char *) glGetString(GL_VENDOR);
                         GLenum err = glGetError();
 
-                        if (first_renderer[0] == ' ' && r) {
+                        if (first_renderer[0] == '\0' && r) {
                             SDL_strlcpy(first_renderer, r, sizeof(first_renderer));
                         }
                         fprintf(stderr,
@@ -830,18 +844,30 @@ static void gfx_sdl_maybe_screenshot(void) {
     SDL_free(px);
 }
 
-/* Title-bar stats: rendered fps + engine FIELDS/sec (g_GlobalTickCount counts
- * video fields, not loop ticks - see lv.c) + the GE_TICKHZ configuration
- * and the actual pump rate. Updated twice a second; cheap enough to leave
- * always on.
+/* Title-bar stats: presented fps, the ticks/sec g_GlobalTickCount advances at,
+ * the FIELDS the sim is credited per second, and the fields each tick absorbed
+ * + the GE_TICKHZ configuration and the actual pump rate. Updated twice a
+ * second; cheap enough to leave always on.
  *
- * The four numbers exist to separate failure modes that all read "60 fps |
- * 60 tps" from the outside:
+ * WARNING: g_GlobalTickCount is NOT a field counter. lv.c increments it by ONE
+ * per tick that advanced the clock, however many fields that tick absorbed, so
+ * its rate is min(tick rate, 60) - it falls with fps below 60 and reads 60 at
+ * any raised tick rate. It used to be labelled "engine FIELDS/sec" here, which
+ * was only true while frames fitted inside one field. The real field counter is
+ * g_PortFieldsTicked (frametiming.c), shown as f/s: THAT is the one that reads
+ * 60.0 whenever simulated time is keeping up, and it is the only one that
+ * exposes a sim losing time under `tickhz=hw`. See
+ * docs/port/tick-and-field-accounting.md.
+ *
+ * The numbers exist to separate failure modes that all read "60 fps | 60 tk"
+ * from the outside:
  *   tick 60          -> GE_TICKHZ never reached the process
  *   tick 120 pump 60 -> the pacer isn't honouring subdiv (GE_NOSLEEP?)
  *   tick 120 pump120, fps 60 -> the blocking swap / gfx backpressure is
  *                               pinning the loop (vsync=1 on a 60Hz panel)
- *   tick 120 pump120, fps120 tps 60 -> working as designed. */
+ *   tick 120 pump120, fps120 f/s 60, f/t 0.50 -> working as designed
+ *   f/s below 60 -> the sim is losing wall-clock time: a stall the credit path
+ *                   truncated (GE_TICKMAXSTEP), never a frame-rate symptom */
 extern "C" int32_t g_GlobalTickCount;
 extern "C" unsigned int g_PortFramesPumped;
 extern "C" unsigned long long g_PortPumpSleepUs;
@@ -854,14 +880,29 @@ extern "C" unsigned int g_PortRaphnetPolls;
 extern "C" int32_t portTickHz(void);
 extern "C" int32_t g_PortStatFps; /* frametiming.c; show_fps overlay reads */
 extern "C" int32_t g_PortStatTps;
+extern "C" int32_t g_PortStatTicks;             /* the honest tick rate */
+extern "C" int32_t g_PortStatFieldsX10;          /* fields/s x10: game speed */
+extern "C" int32_t g_PortStatFieldsPerTickX100;  /* fields per tick x100 */
+extern "C" uint32_t g_PortFieldsTicked;          /* monotonic, frametiming.c */
+/* The SIM STEP counter, not boss.c's admitted-tick counter: g_PortTicksAdmitted
+ * is incremented before the `pendingGfx < 2` backpressure guard, so under gfx
+ * backpressure it counts ticks that never reached lvlTick. g_PortTickSerial
+ * increments inside lvlTick itself (lv.c), so it is the number of ticks that
+ * actually stepped the sim - which is the quantity f/t must divide by, or
+ * f/t reads below 1.00 at tickhz=60 and looks like sub-ticking. */
+extern "C" int32_t g_PortTickSerial;             /* monotonic, lv.c */
 /* swap_buffers_begin: time in the maxfps limiter / in SDL_GL_SwapWindow */
 static unsigned long long stat_limit_us = 0;
 static unsigned long long stat_swap_us = 0;
 
+#include "tick_stats.h"   /* the tested rate maths this pass publishes */
+
 static void gfx_sdl_update_title_stats(void) {
     static uint32_t stat_last_ms = 0;
     static uint32_t stat_frames = 0;
-    static int32_t stat_last_tick = 0;
+    static uint32_t stat_last_tick = 0;
+    static uint32_t stat_last_fields = 0;
+    static uint32_t stat_last_ticks = 0;
     static unsigned int stat_last_pump = 0;
     static unsigned long long stat_last_idle = 0;
     static unsigned long long stat_last_glus = 0;
@@ -892,7 +933,9 @@ static void gfx_sdl_update_title_stats(void) {
     stat_frames++;
     if (stat_last_ms == 0) {
         stat_last_ms = now;
-        stat_last_tick = g_GlobalTickCount;
+        stat_last_tick = __atomic_load_n(&g_GlobalTickCount, __ATOMIC_RELAXED);
+        stat_last_fields = __atomic_load_n(&g_PortFieldsTicked, __ATOMIC_RELAXED);
+        stat_last_ticks = (uint32_t) __atomic_load_n(&g_PortTickSerial, __ATOMIC_RELAXED);
         stat_last_pump = g_PortFramesPumped;
         stat_last_idle = g_PortPumpSleepUs;
         stat_last_glus = g_PortGfxRunUs;
@@ -909,7 +952,35 @@ static void gfx_sdl_update_title_stats(void) {
         char title[200];
         uint32_t dt = now - stat_last_ms;
         int fps = (int)((stat_frames * 1000 + dt / 2) / dt);
-        int tps = (int)(((g_GlobalTickCount - stat_last_tick) * 1000 + (int)dt / 2) / (int)dt);
+        /* D4: lvlStageLoad zeroes g_GlobalTickCount (lv.c), and this static is in
+         * another translation unit, so it cannot see the reset. Without this the
+         * first window after a load computed 0 - stat_last_tick and published
+         * -2x the pre-load tick count (TPS -600 after 5s of play, for up to
+         * 500ms) into both the overlay and audio_pump.log. A reset is not a
+         * measurement: re-seat the baseline, so this one window reads 0 and the
+         * next one is correct. (fps and the field figures are unaffected - they
+         * come from counters that a stage load does not reset.) */
+        /* Relaxed atomic loads throughout: this pass runs on the render thread
+         * when render_thread=1 and the game thread writes these counters, so a
+         * plain read is a data race by the letter of C11. Relaxed is enough -
+         * each is an independent sample, not a set that must agree. */
+        const int32_t tickNow = __atomic_load_n(&g_GlobalTickCount, __ATOMIC_RELAXED);
+
+        stat_last_tick = portStatsReseatTickBaseline(stat_last_tick, tickNow);
+        int tps = (int) portStatsRatePerSec((uint32_t) (tickNow - stat_last_tick), dt, 1);
+        /* Option C: the two numbers that say whether simulated time is keeping
+         * up. Both counters are monotonic since boot (neither is reset by a
+         * stage load), so a load cannot make them go backwards.
+         *   fields/s   x10  - 600 = 60.0 fields/s = game speed correct.
+         *   fields/tick x100 - 100 = one field per tick; >100 = frames are
+         *                      overrunning a field; <100 = sub-ticking.
+         * The arithmetic lives in port/src/tick_stats.c so it is tested without
+         * a window; see port/tests/tick_stats.c. */
+        const uint32_t dfields = (uint32_t) (__atomic_load_n(&g_PortFieldsTicked, __ATOMIC_RELAXED) - stat_last_fields);
+        const uint32_t dticks = (uint32_t) ((uint32_t) __atomic_load_n(&g_PortTickSerial, __ATOMIC_RELAXED) - stat_last_ticks);
+        int fields10 = (int) portStatsRatePerSec(dfields, dt, 10);
+        int ticks = (int) portStatsRatePerSec(dticks, dt, 1);
+        int ft100 = (int) portStatsFieldsPerTickX100(dfields, dticks);
         int pump = (int)(((g_PortFramesPumped - stat_last_pump) * 1000 + dt / 2) / dt);
         /* idle% = share of wall time parked in the pump's pacing wait.
          * ~0 = no slack anywhere (real work); high = the pacer is waiting
@@ -928,18 +999,23 @@ static void gfx_sdl_update_title_stats(void) {
         int rnhz = (int)(((g_PortRaphnetPolls - stat_last_rn) * 1000 + dt / 2) / dt);
         g_PortStatFps = fps;
         g_PortStatTps = tps;
+        g_PortStatTicks = ticks;
+        g_PortStatFieldsX10 = fields10;
+        g_PortStatFieldsPerTickX100 = ft100;
         int audms10 = (int)(((g_PortAudioUs - stat_last_audus) * 10) / (1000ull * frames));
         int joyms10 = (int)(((g_PortJoyUs - stat_last_joyus) * 10) / (1000ull * frames));
         int pmpms10 = (int)(((g_PortPumpUs - stat_last_pmpus) * 10) / (1000ull * frames));
         SDL_snprintf(title, sizeof(title),
-                     "ge007 | %dfps %dtps | tick%d pump%d | idle%d%% gl%d.%d lim%d.%d swp%d.%d | pmp%d.%d joy%d.%d aud%d.%d | draws %d rn%dHz",
-                     fps, tps, (int)portTickHz(), pump, idle,
+                     "ge007 | %dfps %dtk %d.%df/s %d.%02df/t | tick%d pump%d | idle%d%% gl%d.%d lim%d.%d swp%d.%d | pmp%d.%d joy%d.%d aud%d.%d | draws %d rn%dHz",
+                     fps, ticks, fields10 / 10, fields10 % 10, ft100 / 100, ft100 % 100,
+                     (int)portTickHz(), pump, idle,
                      glms10 / 10, glms10 % 10, limms10 / 10, limms10 % 10,
                      swpms10 / 10, swpms10 % 10, pmpms10 / 10, pmpms10 % 10,
                      joyms10 / 10, joyms10 % 10, audms10 / 10, audms10 % 10, draws, rnhz);
         /* Title-bar stats are opt-in (GE_TITLESTATS=1) to keep the title clean
          * for recording. The numbers still feed the in-game
-         * show_fps overlay via g_PortStatFps/Tps above. */
+         * show_fps digits and the cl_audio_pump block via the g_PortStat*
+         * globals above. */
         {
             static int title_stats = -1;
             if (title_stats < 0) { const char *e = SDL_getenv("GE_TITLESTATS"); title_stats = (e && *e && *e != '0') ? 1 : 0; }
@@ -973,7 +1049,9 @@ static void gfx_sdl_update_title_stats(void) {
         }
         stat_last_ms = now;
         stat_frames = 0;
-        stat_last_tick = g_GlobalTickCount;
+        stat_last_fields = __atomic_load_n(&g_PortFieldsTicked, __ATOMIC_RELAXED);
+        stat_last_ticks = (uint32_t) __atomic_load_n(&g_PortTickSerial, __ATOMIC_RELAXED);
+        stat_last_tick = __atomic_load_n(&g_GlobalTickCount, __ATOMIC_RELAXED);
         stat_last_pump = g_PortFramesPumped;
         stat_last_idle = g_PortPumpSleepUs;
         stat_last_glus = g_PortGfxRunUs;

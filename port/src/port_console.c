@@ -397,7 +397,9 @@ static void conCmdHelp(void)
     conPrintLn(0, "client commands (cl_ = changes the game; saved to midas.ini):");
     conPrintLn(0, "  cl_<setting> <value>  set any setting - cl_vsync 0, cl_maxfps 144");
     conPrintLn(0, "  cl_<setting>          show it");
-    conPrintLn(0, "  cl_showfps 0|1        the FPS / TPS strip");
+    conPrintLn(0, "  cl_showfps 0|1        the FPS digits");
+    conPrintLn(0, "  cl_audio_pump 0|1      live audio pump state, replacing the FPS digits");
+    conPrintLn(0, "  cl_audio_log 0|1       the same, once a second, to Data/Logs/audio_pump.log");
     conPrintLn(0, "  cl_fov <deg>          field of view (16:9 horizontal); cl_fps = cl_maxfps");
     conPrintLn(0, "  cl_hitchms <ms>       log frames this slow as 'ge: hitch:' (0 = off, not saved)");
     conPrintLn(0, "  cl_fadedbg 0|1        log objects' fade / cull changes as 'ge: fade:'");
@@ -451,6 +453,94 @@ static void conCmdClient(const char *name, const char *value)
         conPrintLn(0, "usage: cl_<setting> [value] - try: list");
         return;
     }
+    if (conStrEqI(name, "classic"))
+    {
+        /* Classic Mode's state, and the repair for a half-applied one.
+         *
+         * -n64_aa cannot repair a half-state: it declines to act on a mode that
+         * is already on, because re-entering would overwrite the player's saved
+         * values with the forced ones. So repair is its own operation, and it
+         * remembers nothing. */
+        extern s32         portClassicMismatchParts(s32 *idx, s32 max);
+        extern s32         portClassicRepair(void);
+        extern s32         portClassicCount(void);
+        extern const char *portClassicKey(s32 i);
+        extern s32         portOptSetValue(s32 i, s32 v);
+        extern s32         portOptGet(s32 i);
+        const s32 mode = portOptFind("classic_mode");
+        const s32 on = (mode >= 0) && portOptGet(mode) != 0;
+
+        if (value != NULL && conStrEqI(value, "fix"))
+        {
+            const s32 wrote = portClassicRepair();
+
+            portConPrintf(1, "cl_classic: %s (%d value%s)\n",
+                          (wrote > 0) ? "repaired" : "already consistent", (int) wrote,
+                          (wrote == 1) ? "" : "s");
+            return;
+        }
+        if (value != NULL && (conStrEqI(value, "on") || conStrEqI(value, "off")))
+        {
+            const s32 want = conStrEqI(value, "on") != 0;
+
+            if (mode < 0)
+            {
+                portConPrintf(1, "cl_classic: no classic_mode row\n");
+                return;
+            }
+            if (want == on)
+            {   /* a transition, not a repair: re-entering would retake the
+                 * snapshot, so "already on" must not do the work again.
+                 * optSet leaves the same-value case alone for the same reason. */
+                portConPrintf(1, "cl_classic = %s (already)\n", on ? "on" : "off");
+                return;
+            }
+            /* One set. The option table's choke point applies the mode for
+             * every surface, so this must not call portClassicSetLive after it -
+             * that is the double apply Phase 2 removed. It writes classic_mode,
+             * the PRESET: n64_aa is the AA bit now, and setting that would turn
+             * on edge blending and nothing else. */
+            portOptSetValue(mode, want);
+            portConPrintf(1, "cl_classic = %s\n", want ? "on" : "off");
+            return;
+        }
+
+        /* status: the flag, the parts, and how many of them disagree. */
+        {
+            s32 idx[16];
+            s32 n;
+            s32 i;
+            char list[192];
+
+            n = portClassicMismatchParts(idx, (s32) (sizeof(idx) / sizeof(idx[0])));
+            list[0] = '\0';
+            for (i = 0; i < n; i++)
+            {
+                char one[32];
+
+                snprintf(one, sizeof(one), "%s%s", (i > 0) ? ", " : "",
+                         (idx[i] >= 0) ? portClassicKey(idx[i]) : "?");
+                if (strlen(list) + strlen(one) < sizeof(list))
+                {
+                    strcat(list, one);
+                }
+            }
+            if (n > 0)
+            {
+                portConPrintf(0, "cl_classic = on, %d of %d settings not classic (%s)\n",
+                              (int) n, (int) portClassicCount(), list);
+            }
+            else
+            {
+                portConPrintf(0, "cl_classic = %s\n", on ? "on, consistent" : "off");
+            }
+            if (value != NULL && !conStrEqI(value, "status"))
+            {
+                conPrintLn(1, "usage: cl_classic [status|fix|on|off]");
+            }
+            return;
+        }
+    }
     if (conStrEqI(name, "fadedbg"))
     {   /* propobj.c: log each object's visibility verdict as it changes */
         extern void portFadeDbgSet(s32 on);
@@ -461,6 +551,43 @@ static void conCmdClient(const char *name, const char *value)
             portFadeDbgSet(atoi(value) != 0);
         }
         portConPrintf(value != NULL, "cl_fadedbg = %d (log: 'ge: fade:' lines)\n", (int) g_PortFadeDbg);
+        return;
+    }
+    /* The overlay toggle lives in audio_pc.c beside the counters it shows. Not
+     * a midas.ini key: it is a diagnostic, so it should not survive a restart
+     * because someone typed it once while reading a crackle report. The hyphen
+     * spelling is accepted too, since the console echoes the underscore form
+     * but the name reads as two words. */
+    if (conStrEqI(name, "audio_pump") || conStrEqI(name, "audio-pump"))
+    {
+        extern s32 portAudioPumpStatsShown(void);   /* audio_pc.c */
+        extern void portAudioPumpStatsSet(s32 on);
+
+        if (value != NULL)
+        {
+            portAudioPumpStatsSet(atoi(value) != 0);
+        }
+        portConPrintf(value != NULL, "cl_audio_pump = %d (%s, not saved)\n",
+                      (int) portAudioPumpStatsShown(), portAudioPumpStatsShown() ? "on" : "off");
+        return;
+    }
+    if (conStrEqI(name, "audio_log") || conStrEqI(name, "audio-log"))
+    {
+        extern s32 portAudioPumpLogShown(void);    /* audio_pc.c */
+        extern void portAudioPumpLogSet(s32 on);
+
+        if (value != NULL)
+        {
+            portAudioPumpLogSet(atoi(value) != 0);
+        }
+        if (portAudioPumpLogShown())
+        {
+            portConPrintf(value != NULL, "cl_audio_log = 1 (on, not saved) -> Data/Logs/audio_pump.log\n");
+        }
+        else
+        {
+            portConPrintf(value != NULL, "cl_audio_log = 0 (off, not saved)\n");
+        }
         return;
     }
     if (conStrEqI(name, "hitchms"))

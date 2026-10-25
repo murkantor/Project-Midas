@@ -104,6 +104,10 @@ typedef struct ALParam_s {
         f32             f;
         s32             i;
     } yetstillmoredata;
+#ifdef GE_NATIVE_64
+    /* The pool also stores ALStartParamAlt, whose final pointer needs 8 bytes. */
+    uintptr_t startVoiceStorage;
+#endif
 } ALParam;
 
 typedef struct {
@@ -163,7 +167,7 @@ typedef struct {
     s32                         sample;
     s32                         lastsam;
     s32                         first;
-    s32                         memin; 
+    intptr_t                         memin;
 } ALLoadFilter;
 
 void    alLoadNew(ALLoadFilter *f, ALDMANew dma, ALHeap *hp);
@@ -256,7 +260,7 @@ s32     alResampleParam(void *f, s32 paramID, void *param);
 
 typedef struct ALSave_s {
     ALFilter            filter;
-    s32	       		dramout;
+    intptr_t	       		dramout;
     s32                 first;
 } ALSave;
 

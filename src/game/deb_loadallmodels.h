@@ -21,4 +21,8 @@ typedef struct WeaponProjectileModels {
 void init_obj_register_difficulty_vals(void);
 void alloc_false_GUARDdata_to_exec_global_action(void);
 
+
+void debug_object_load_all_models(void);
+void debug_weapon_load_table(void);
+
 #endif

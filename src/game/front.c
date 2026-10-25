@@ -1,10 +1,19 @@
+#ifndef TARGET_N64
+#include "port_options.h"
+#endif
 #include <os_extension.h>
+#include "game/debugmenu_handler.h"
+#include "game/options.h"
+#include "game/propobj.h"
+#include "game/ramromreplay.h"
+#include "game/viewport.h"
 #ifndef TARGET_N64
 #include <stdio.h> /* frontDrawCursor GE_DUMP_BOND probe */
 #endif
 #include <assets/oddtextures.h>
 #include "assets/image_externs.h"
 #include <ultra64.h>
+#include "gun.h"
 #include <bondgame.h>
 #include <bondconstants.h>
 #include <boss.h>
@@ -361,7 +370,7 @@ s32 is_cheat_menu_available = FALSE;
  * docs/port/port-options-menu.md */
 
 u8 * ptr_logo_and_walletbond_DL = NULL;
-s32 ptr_menu_videobuffer = 0;
+intptr_t ptr_menu_videobuffer = 0;
 struct Model *logoinst = NULL;
 struct Model * walletinst[] = { NULL, NULL, NULL, NULL};
 
@@ -1081,14 +1090,14 @@ Gfx *constructor_menu19_spectrum(Gfx *DL);
 void disable_all_switches(Model *arg0);
 void set_item_visibility_in_objinstance(Model* objinstance, s32 item, s32 mode);
 void set_cursor_to_stage_solo(LEVEL_SOLO_SEQUENCE level);
-Gfx *display_aligned_white_text_to_screen(Gfx *dl, s32 arg1, s32 arg2, s32 halign, s32 valign, u8 *arg5, s32 arg6, s32 arg7);
+Gfx *display_aligned_white_text_to_screen(Gfx *dl, s32 arg1, s32 arg2, s32 halign, s32 valign, u8 *arg5, struct fontchar *arg6, struct font *arg7);
 void setCursorPOSforMode(int mode);
 void set_cursor_pos_difficulty(int difficulty);
 
 // end forward declarations.
 
 
-Gfx *frontPrintText(Gfx *gdl, s32 *x, s32 *y, s8 *text, s32 second_font_table, s32 first_font_table, s32 arg6, s32 view_x, s32 view_y, s32 arg9, s32 arga)
+Gfx *frontPrintText(Gfx *gdl, s32 *x, s32 *y, s8 *text, struct fontchar *second_font_table, struct font *first_font_table, s32 arg6, s32 view_x, s32 view_y, s32 arg9, s32 arga)
 {
     if (j_text_trigger != 0)
     {
@@ -1264,7 +1273,7 @@ s32 frontCheckIfCheatIsUnlocked(s32 cheat)
 }
 
 
-int frontGetPlayersFavoriteWeaponInHand(int player,int hand) {
+u16 *frontGetPlayersFavoriteWeaponInHand(int player,int hand) {
     return get_ptr_long_watch_text_for_item(array_favweapon[player][hand]);
 }
 
@@ -1470,7 +1479,7 @@ Gfx *frontDrawCursor(Gfx *DL)
         {
             fprintf(stderr,
                     "cursor: opt=%d img=%08x idx=%08x w=%d h=%d fmt=%d copyidx=%08x\n",
-                    option, (u32) image, image->index, image->width,
+                    option, (uintptr_t) image, image->index, image->width,
                     image->height, image->format,
                     (mainfolderimages + IMG_COPY)->index);
             fflush(stderr);
@@ -1769,7 +1778,7 @@ void interface_menu00_legalscreen(void)
 /**
  * Render a string of standard text on the legal screen e.g. "TWYCROSS BOARD OF GAME CLASSIFICATION"
  */
-Gfx *display_aligned_white_text_to_screen(Gfx *dl, s32 arg1, s32 arg2, s32 halign, s32 valign, u8 *text, s32 arg6, s32 arg7)
+Gfx *display_aligned_white_text_to_screen(Gfx *dl, s32 arg1, s32 arg2, s32 halign, s32 valign, u8 *text, struct fontchar *arg6, struct font *arg7)
 {
     s32 sp4C;
     s32 sp48;
@@ -1865,7 +1874,7 @@ Gfx *constructor_menu00_legalscreen(Gfx *DL)
 
         sprintf(line, "Project Midas %s: Build %s\n", portPlatformName(), portBuildString());
         DL = display_aligned_white_text_to_screen(DL, 220, 16, CENTER_ALIGN, CENTER_ALIGN, (u8 *) line,
-                                                  (s32) ptrFontZurichBoldChars, (s32) ptrFontZurichBold);
+                                                  ptrFontZurichBoldChars, ptrFontZurichBold);
     }
 #endif
 
@@ -2571,7 +2580,7 @@ void frontCleanUpWalletBond(void)
 void init_menu05_fileselect(void)
 {
     s32 size = 0x6e000;
-    Gfx* DL = (s32)(ptr_logo_and_walletbond_DL) + (s32)(4096*10);
+    Gfx* DL = (Gfx *)(ptr_logo_and_walletbond_DL + 4096 * 10);
     int i;
 
     prev_keypresses = FALSE;
@@ -4382,6 +4391,7 @@ extern s32 portOptSetIndex(s32 i, s32 idx);
 extern void portOptStep(s32 i, s32 dir);
 extern s32 portOptIsRanged(s32 i);
 extern void portOptSaveHold(s32 on);
+extern void portClassicSetHold(s32 on);   /* the mode's own hold: see portSheetApply */
 extern s32 portOptAvailable(s32 i);
 extern s32 portVideoResCount(void);
 extern s32 portVideoResGet(s32 i, s32 *w, s32 *h);
@@ -4699,14 +4709,19 @@ static const char *portSheetPageLabel(s32 kind)
  * once they exist. */
 static const struct PortSheetRow port_sheet_rows_video[] = {
     /* the whole sheet is DEFERRED to APPLY CHANGES (portSheetDeferred).
-     * widescreen, msaa, classic mode (n64_aa), mipmaps and 2d filtering moved
-     * here from GRAPHICS. */
+     * widescreen, msaa, classic mode (classic_mode), mipmaps and 2d filtering
+     * moved here from GRAPHICS. */
     { SHROW_OPT, "fullscreen" }, { SHROW_RES, NULL }, { SHROW_OPT, "vsync" },
     { SHROW_OPT, "widescreen" },
+    /* N64 AA ABOVE CLASSIC MODE, by the same rule as the watch: Classic Mode
+     * does not own the bit (its classic_n64aa part decides whether it touches
+     * it), so the row is not greyed while the mode is on. Both of these are
+     * settings a player reads as a pair, which is why they sit together. */
+    { SHROW_OPT, "n64_aa", "N64 AA\n" },
     /* CLASSIC MODE SITS OVER WHAT IT FORCES: every row below
      * it is one of port_options.c's classic keys, greyed while it is on
      * (portSheetRowDisabled). A row that classic mode does not own goes ABOVE. */
-    { SHROW_OPT, "n64_aa", "Classic Mode\n" },
+    { SHROW_OPT, "classic_mode", "Classic Mode\n" },
     /* FIELD OF VIEW above 3D resolution. Not a classic key, so Classic
      * Mode leaves it live (portSheetRowDisabled goes by key) */
     { SHROW_OPT, "hfov_wide" },
@@ -5225,7 +5240,7 @@ static void portSheetBuild(s32 kind)
          * CHANGES lands it; rows already correct get no pick. */
         extern s32 portOptGet(s32 i);
 
-        if (portOptFind("n64_aa") >= 0 && portOptGet(portOptFind("n64_aa")) != 0)
+        if (portOptFind("classic_mode") >= 0 && portOptGet(portOptFind("classic_mode")) != 0)
         {
             portSheetClassicPreset();
         }
@@ -5446,10 +5461,11 @@ static s32 portSheetAnyPending(void)
     return FALSE;
 }
 
-/* Classic Mode (the n64_aa key): turning it ON also picks hardware 3D
+/* Classic Mode (the classic_mode key): turning it ON also picks hardware 3D
  * resolution, 3-point filtering, 8x anisotropy and hardware max fps as pending
- * picks for APPLY CHANGES to land together; turning it OFF only turns off the
- * AA here. */
+ * picks for APPLY CHANGES to land together - and the N64 AA bit, if the mode's
+ * classic_n64aa part is on (portSheetClassicPreset). Turning it OFF restores
+ * the remembered values and clears the bit the mode set. */
 static void portSheetPendSetKey(const char *key, s32 value)
 {
     extern s32 portOptIndexOfValue(s32 i, s32 v);
@@ -5481,6 +5497,7 @@ extern s32         portClassicPartOn(s32 i);
 
 static void portSheetClassicPreset(void)
 {
+    extern s32 portClassicSetsN64Aa(void);   /* video.c: the classic_n64aa part */
     s32 i;
 
     for (i = 0; i < portClassicCount(); i++)
@@ -5490,26 +5507,35 @@ static void portSheetClassicPreset(void)
             portSheetPendSetKey(portClassicKey(i), portClassicVal(i));
         }
     }
+    /* The mode's ONLY link to the AA bit, pended as one more pick. It has to be
+     * here rather than left to the choke point: APPLY CHANGES lands the whole
+     * sheet under portClassicSetHold, which suppresses the transition - the
+     * sheet IS the transition. Without this pick the preset would come on with
+     * N64 edges still off, which is not the look it promises. */
+    if (portClassicSetsN64Aa())
+    {
+        portSheetPendSetKey("n64_aa", 1);
+    }
 }
 
 /** Is classic mode ON as this sheet shows it - the pending pick if there is one, else live? */
 static s32 portSheetClassicShownOn(void)
 {
-    const s32 aa = portOptFind("n64_aa");
+    const s32 mode = portOptFind("classic_mode");
     s32 r;
 
-    if (aa < 0 || port_sheet_kind != PORT_SHEET_VIDEO)
+    if (mode < 0 || port_sheet_kind != PORT_SHEET_VIDEO)
     {
         return FALSE;
     }
     for (r = 0; r < port_sheet_rows; r++)
     {
-        if (port_sheet_row_kind[r] == SHROW_OPT && port_sheet_row_opt[r] == aa && port_sheet_pending[r] >= 0)
+        if (port_sheet_row_kind[r] == SHROW_OPT && port_sheet_row_opt[r] == mode && port_sheet_pending[r] >= 0)
         {
             return port_sheet_pending[r] == 1;
         }
     }
-    return portOptGet(aa) != 0;
+    return portOptGet(mode) != 0;
 }
 
 /** The display mode as this sheet shows it - the pending pick if there is one, else
@@ -5549,6 +5575,7 @@ static s32 portSheetResLocked(void)
 static void portSheetClassicRevert(void)
 {
     extern s32 portVideoClassicSavedGet(s32 *v);
+    extern s32 portClassicSetsN64Aa(void);   /* video.c: the classic_n64aa part */
     s32 v[PORT_SHEET_CLASSIC_KEYS];
     s32 n;
     s32 i, r;
@@ -5563,7 +5590,7 @@ static void portSheetClassicRevert(void)
             port_sheet_pending[r] = -1;
         }
     }
-    if (portOptGet(portOptFind("n64_aa")) == 0)
+    if (portOptGet(portOptFind("classic_mode")) == 0)
     {   /* never applied: live already holds what they were before, and a
          * snapshot here could only be an OLD cycle's */
         return;
@@ -5576,23 +5603,30 @@ static void portSheetClassicRevert(void)
             portSheetPendSetKey(portClassicKey(i), v[i]);
         }
     }
+    /* ...and the bit the mode turned on, on the same terms as the preset's own
+     * pick: only if the mode owns it. A part-off mode never touched the bit, so
+     * nothing here may either. */
+    if (portClassicSetsN64Aa())
+    {
+        portSheetPendSetKey("n64_aa", 0);
+    }
 }
 
-/** Live n64_aa 0 -> pending 1 on this apply? Then remember the four first. */
+/** Live classic_mode 0 -> pending 1 on this apply? Then remember the four first. */
 static void portSheetClassicSnapshot(void)
 {
     extern void portVideoClassicSavedSet(const s32 *v);
-    const s32 aa = portOptFind("n64_aa");
+    const s32 mode = portOptFind("classic_mode");
     s32 v[PORT_SHEET_CLASSIC_KEYS];
     s32 r, i;
 
     extern s32 portVideoClassicSavedGet(s32 *v);
 
-    /* ALREADY ON with nothing remembered (n64_aa=1 from the launcher's AA
-     * box, the console or an old ini): the repair picks portSheetOpen pended
+    /* ALREADY ON with nothing remembered (classic_mode=1 from the launcher,
+     * the console or an old ini): the repair picks portSheetOpen pended
      * are about to replace the player's own values, so remember those
      * unless this apply turns it off */
-    if (aa >= 0 && portOptGet(aa) != 0 && portSheetClassicShownOn() && portVideoClassicSavedGet(v) == 0)
+    if (mode >= 0 && portOptGet(mode) != 0 && portSheetClassicShownOn() && portVideoClassicSavedGet(v) == 0)
     {
         for (i = 0; i < portClassicCount() && i < PORT_SHEET_CLASSIC_KEYS; i++)
         {
@@ -5601,10 +5635,10 @@ static void portSheetClassicSnapshot(void)
         portVideoClassicSavedSet(v);
         return;
     }
-    for (r = 0; aa >= 0 && r < port_sheet_rows; r++)
+    for (r = 0; mode >= 0 && r < port_sheet_rows; r++)
     {
-        if (port_sheet_row_kind[r] == SHROW_OPT && port_sheet_row_opt[r] == aa
-            && port_sheet_pending[r] == 1 && portOptGet(aa) == 0)
+        if (port_sheet_row_kind[r] == SHROW_OPT && port_sheet_row_opt[r] == mode
+            && port_sheet_pending[r] == 1 && portOptGet(mode) == 0)
         {
             for (i = 0; i < portClassicCount() && i < PORT_SHEET_CLASSIC_KEYS; i++)
             {
@@ -5667,7 +5701,7 @@ static void portSheetPick(s32 row, s32 idx)
             port_sheet_pending_resw = 0;
             port_sheet_pending_resh = 0;
         }
-        if (strcmp(portOptKey(opt), "n64_aa") == 0)
+        if (strcmp(portOptKey(opt), "classic_mode") == 0)
         {
             if (idx == 1)
             {
@@ -5983,18 +6017,18 @@ static void portSheetApply(void)
      * name (a launcher Max FPS of 165) could not be pended as a pick, so it
      * is put back raw after the picks land, as the watch does. Only
      * on rows the player left without a pick of their own. */
-    const s32 aaOpt = portOptFind("n64_aa");
+    const s32 modeOpt = portOptFind("classic_mode");
     s32 classicOff = 0;
     s32 classicRaw[PORT_SHEET_CLASSIC_KEYS];
     s32 classicUse[PORT_SHEET_CLASSIC_KEYS] = { 0 };
     s32 classicRawN = 0;
     s32 i;
 
-    for (r = 0; aaOpt >= 0 && r < port_sheet_rows; r++)
+    for (r = 0; modeOpt >= 0 && r < port_sheet_rows; r++)
     {
-        if (port_sheet_row_kind[r] == SHROW_OPT && port_sheet_row_opt[r] == aaOpt)
+        if (port_sheet_row_kind[r] == SHROW_OPT && port_sheet_row_opt[r] == modeOpt)
         {
-            classicOff = (port_sheet_pending[r] == 0) && (portOptGet(aaOpt) != 0);
+            classicOff = (port_sheet_pending[r] == 0) && (portOptGet(modeOpt) != 0);
         }
     }
     if (classicOff)
@@ -6024,6 +6058,13 @@ static void portSheetApply(void)
     }
 
     portSheetClassicSnapshot();   /* before anything lands: the values being replaced */
+    /* The sheet lands its own plan: portSheetClassicPreset/Revert pended the
+     * classic values as red picks when the player chose the mode, and this loop
+     * commits them. The choke point must stand down, or classic_mode landing mid-loop
+     * would apply the mode on its own and the pended values would then land on
+     * top of it - correct only by luck, and only while the row order happens to
+     * favour it. This is the mechanism that makes that question unaskable. */
+    portClassicSetHold(1);
     for (r = 0; r < port_sheet_rows; r++)
     {
         if (port_sheet_pending[r] >= 0 && port_sheet_row_kind[r] == SHROW_OPT)
@@ -6038,6 +6079,7 @@ static void portSheetApply(void)
             portOptSetValue(portOptFind(portClassicKey(i)), classicRaw[i]);
         }
     }
+    portClassicSetHold(0);
     if (haveRes)
     {
         const s32 n = portVideoResCount();
@@ -16519,7 +16561,7 @@ void set_briefing_page(WATCH_BRIEFING_PAGE page)
 // Address 0x7F015520 NTSC
 void load_briefing_text_for_stage(void)
 {
-    Gfx *temp_s0;
+    u8 *temp_s0;
     s32 argg;
 
 #ifndef TARGET_N64
@@ -16533,15 +16575,14 @@ void load_briefing_text_for_stage(void)
     }
 #endif
 
-    // what is this
-    temp_s0 = (s32)(ptr_logo_and_walletbond_DL) + (s32)(4096*10);
+    // The briefing and language bank share the remaining menu buffer.
+    temp_s0 = ptr_logo_and_walletbond_DL + 4096 * 10;
 
     // alright
     argg = 0x200;
     ptrbriefingdata = _fileNameLoadToAddr(mission_folder_setup_entries[briefingpage].briefing_name_ptr, FILELOADMETHOD_DEFAULT, (u8 *) temp_s0, argg);
 
-    // what is this
-    temp_s0 += argg / 8;
+    temp_s0 += argg;
 
     // what is this
     argg *= 879;
@@ -17822,7 +17863,7 @@ Gfx *constructor_menu16_nocontrollers(Gfx *DL)
     s32 x2;
     s32 x;
     s32 y;
-    s32 text;
+    u8 *text;
     s32 conConnected = joyGetConnectedControllers();
     s32 numContCon = 0;
 
@@ -18744,6 +18785,16 @@ static void portDirectLaunchTick(void)
     {
         const char *e = getenv("GE_STAGE");
         state = 2;
+        {   /* -stage <name> asks for exactly this; the env var is the older way
+             * and stays supported. The flag wins, like every other flag. */
+            extern const char *videoBootStage(void);   /* video.c; weak NULL */
+            const char *f = videoBootStage();
+
+            if (f != NULL)
+            {
+                e = f;
+            }
+        }
         if (e != NULL && e[0] != '\0')
         {
             if (e[0] >= '0' && e[0] <= '9')
@@ -18775,7 +18826,7 @@ static void portDirectLaunchTick(void)
             }
             if (state != 1)
             {
-                printf("ge: GE_STAGE=%s not recognized\n", e);
+                printf("ge: -stage/GE_STAGE=%s not recognized\n", e);
             }
         }
         return;
@@ -19204,6 +19255,77 @@ static void portDirectLaunchMpTick(void)
     state = 2;
 }
 
+/* -skip [N]: walk the boot screens without waiting them out.
+ *
+ * The chain is legal -> Nintendo -> Rareware -> eye -> GoldenEye logo -> file
+ * select, each held by its own timer in its own interface function. A bare
+ * -skip skips all five (land on the file select, which is what a capture run
+ * or an impatient launch wants); -skip N skips N of them, so -skip 2 sits on the
+ * Rareware logo with the Nintendo one already gone.
+ *
+ * It advances with frontChangeMenu(next, TRUE), the same call the real screens
+ * make on their timers and on a button press - including the eye intro, which
+ * already supports jumping to the logo mid-animation when someone mashes a
+ * button. Nothing here reaches into a screen's internals, so each screen's
+ * update_* still runs and still tears its own state down.
+ *
+ * The legal screen is the one screen a button press cannot skip on a first
+ * boot (interface_menu00_legalscreen ignores ANY_BUTTON until
+ * is_first_time_on_legal_screen clears), which is why this drives the
+ * transition directly rather than faking input.
+ *
+ * One skip per arrival: MENU_SWITCH_SCREENS is the fade between two screens and
+ * is left alone, so the budget is spent when a screen is actually reached, not
+ * per frame. */
+static void portBootSkipTick(void)
+{
+    extern s32 videoBootSkipScreens(void);   /* video.c; weak 0 headless */
+    static s32 budget = -2;                  /* -2 = not read yet */
+    static s32 spent;
+    static MENU skipped = MENU_INVALID;      /* the screen we already skipped */
+    MENU next = MENU_INVALID;
+
+    if (budget == -2)
+    {
+        budget = videoBootSkipScreens();
+        if (budget < 0)
+        {
+            budget = 5;   /* "all": the chain is five screens long */
+        }
+        if (budget > 0)
+        {
+            extern int printf(const char *, ...);
+
+            printf("ge: -skip: skipping %d boot screen%s\n",
+                   (int) budget, (budget == 1) ? "" : "s");
+        }
+    }
+    if (budget <= 0 || current_menu == MENU_SWITCH_SCREENS)
+    {
+        return;
+    }
+    if (current_menu == skipped)
+    {
+        return;   /* this screen already spent its skip */
+    }
+    switch (current_menu)
+    {
+        case MENU_LEGAL_SCREEN:    next = MENU_NINTENDO_LOGO;  break;
+        case MENU_NINTENDO_LOGO:   next = MENU_RAREWARE_LOGO;  break;
+        case MENU_RAREWARE_LOGO:   next = MENU_EYE_INTRO;      break;
+        case MENU_EYE_INTRO:       next = MENU_GOLDENEYE_LOGO; break;
+        case MENU_GOLDENEYE_LOGO:  next = MENU_FILE_SELECT;    break;
+        default:                   return;   /* past the chain: done skipping */
+    }
+    skipped = current_menu;
+    spent++;
+    if (spent >= budget)
+    {
+        budget = 0;   /* last one: the next screen is the one the caller wanted */
+    }
+    frontChangeMenu(next, TRUE);
+}
+
 /* GE_DEMO=<name|0-13>: play one of the 14 attract recordings immediately
  * (dam1 dam2 facility1 facility2 facility3 runway1 runway2 bunker1 bunker2
  * silo1 silo2 frigate1 frigate2 train - ramrom_table order, ramromreplay.c).
@@ -19308,6 +19430,7 @@ void menu_init(void)
     portDirectLaunchTick();
     portDirectLaunchMpTick();
     portDirectLaunchDemoTick();
+    portBootSkipTick();
     portMenuHarnessTick();
 #ifdef GE_VIDEO
     { /* A mouse aim press (right button by default) acts as B, the "back",

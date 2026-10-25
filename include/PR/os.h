@@ -119,7 +119,7 @@ typedef struct {
 	u16     	transferMode;   /* Block, Track, or sector?   */
 	u16		blockNum;	/* which block is transfering */
 	s32     	sectorNum;      /* which sector is transfering */
-	u32     	devAddr;        /* Device buffer address */
+	uintptr_t     	devAddr;        /* Device buffer address */
 	u32		bmCtlShadow;	/* asic bm_ctl(510) register shadow ram */
 	u32		seqCtlShadow;	/* asic seq_ctl(518) register shadow ram */
 	__OSBlockInfo	block[2];	/* bolck transfer info */
@@ -159,7 +159,7 @@ typedef struct {
 typedef struct {
 	OSIoMesgHdr	hdr;		/* Message header */
 	void *		dramAddr;	/* RDRAM buffer address (DMA) */
-	u32		devAddr;	/* Device buffer address (DMA) */
+	uintptr_t		devAddr;	/* Device buffer address (DMA) */
 	u32 		size;		/* DMA transfer size in bytes */
 	OSPiHandle	*piHandle;	/* PI device handle */
 } OSIoMesg;
@@ -241,6 +241,9 @@ typedef struct OSTimer_s {
 #ifndef TARGET_N64
 /* MinGW defines errno as the macro (*_errno()); GE's field name predates
  * that. The port never uses libc errno by name after this header. */
+#ifdef __cplusplus
+#pragma push_macro("errno")
+#endif
 #undef errno
 #endif
 
@@ -249,6 +252,9 @@ typedef struct {
 	u8      status;                 /* Controller status */
 	u8	errno;
 }OSContStatus;
+#if !defined(TARGET_N64) && defined(__cplusplus)
+#pragma pop_macro("errno")
+#endif
 
 typedef struct {
 	u16     button;
@@ -856,7 +862,7 @@ extern void		osSetTLBASID(s32);
 
 /* Address translation routines and macros */
 
-extern u32		 osVirtualToPhysical(void *);
+extern uintptr_t	 osVirtualToPhysical(void *);
 extern void *		 osPhysicalToVirtual(u32);
 
 #ifdef TARGET_N64
@@ -869,8 +875,8 @@ extern void *		 osPhysicalToVirtual(u32);
 /* PC port: no KSEG mapping - host pointers pass through unchanged, matching
  * the identity osVirtualToPhysical shim. The N64 arithmetic wrapped host
  * pointers into wild addresses (first-frame viewport crash). */
-#define	OS_K0_TO_PHYSICAL(x)	((u32)(x))
-#define	OS_K1_TO_PHYSICAL(x)	((u32)(x))
+#define	OS_K0_TO_PHYSICAL(x)	((uintptr_t)(x))
+#define	OS_K1_TO_PHYSICAL(x)	((uintptr_t)(x))
 
 #define	OS_PHYSICAL_TO_K0(x)	((void *)(x))
 #define	OS_PHYSICAL_TO_K1(x)	((void *)(x))
@@ -895,10 +901,10 @@ extern u32 		osPiGetStatus(void);
 extern s32		osPiGetDeviceType(void);
 extern s32		osPiRawWriteIo(u32, u32);
 extern s32		osPiRawReadIo(u32, u32 *);
-extern s32		osPiRawStartDma(s32, u32, void *, u32);
+extern s32		osPiRawStartDma(s32, uintptr_t, void *, u32);
 extern s32		osPiWriteIo(u32, u32);
 extern s32		osPiReadIo(u32, u32 *);
-extern s32		osPiStartDma(OSIoMesg *, s32, s32, u32, void *, u32,
+extern s32		osPiStartDma(OSIoMesg *, s32, s32, uintptr_t, void *, u32,
 				     OSMesgQueue *);
 extern void		osCreatePiManager(OSPri, OSMesgQueue *, OSMesg *, s32);
 
@@ -1005,10 +1011,8 @@ extern void		osAckRamromWrite(void);
 
 /* byte string operations */
 
-#if defined(__GLIBC__) && !defined(TARGET_N64)
-/* Linux port builds: SDL.h drags in <strings.h>, whose size_t prototypes
- * conflict with the N64 int forms below. Take the host's declarations
- * everywhere on glibc so TUs that include both agree. */
+#if !defined(TARGET_N64)
+/* Host libc and SDL use size_t lengths; keep their declarations consistent. */
 #include <strings.h>
 #else
 extern void     bcopy(const void *, void *, int);
@@ -1025,6 +1029,11 @@ extern u32 		osGetMemSize(void);
 
 /* Printf */
 
+#if !defined(TARGET_N64)
+#include <stdio.h>
+#undef sprintf
+#define sprintf portSprintf
+#endif
 extern int		sprintf(char *s, const char *fmt, ...);
 extern void		osSyncPrintf(const char *fmt, ...);
 extern void		osAsyncPrintf(const char *fmt, ...);

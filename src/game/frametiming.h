@@ -27,10 +27,52 @@ extern s32 frameDelay;
  * recording). */
 extern f32 portTickDelta;
 extern s32 portTickCadence;
-/* Smoothed presentation stats, written by gfx_sdl2's title-stat pass
- * (500ms window) for the midas.ini show_fps in-game overlay. 0 headless. */
+/* Smoothed presentation stats, written by gfx_sdl2's stat pass (500ms window)
+ * for the midas.ini show_fps digits and the cl_audio_pump block. 0 headless. */
 extern s32 g_PortStatFps;
-extern s32 g_PortStatTps;
+extern s32 g_PortStatTps;   /* computed but read by nothing; see frametiming.c */
+/* The tick rate, from g_PortTickSerial (lv.c: incremented once per lvlTick call,
+ * so sub-ticks and paused ticks count), which is why it reads 120 or 144 at a
+ * raised tick rate. NOT from g_PortTicksAdmitted, which boss.c increments before
+ * its pendingGfx backpressure guard and so counts ticks that never stepped. */
+extern s32 g_PortStatTicks;
+/* The two numbers that say whether SIMULATED TIME is keeping up, from the same
+ * window (see docs/port/tick-and-field-accounting.md):
+ *   g_PortStatFieldsX10        60Hz fields credited to the sim per second, x10.
+ *                              600 = 60.0 fields/s = game speed correct. This
+ *                              is the invariant: it holds at any tick rate and
+ *                              at any frame rate the machine sustains.
+ *   g_PortStatFieldsPerTickX100 fields credited per tick, x100. 100 = one field
+ *                              per tick; >100 = frames are overrunning a field
+ *                              and each tick absorbs several; <100 = a raised
+ *                              tick rate sub-ticking one field; 0 = no game
+ *                              time credited in the window (paused, controls
+ *                              locked, a stage load), so the ratio does not
+ *                              exist - note tk can still read 60 beside it. */
+extern s32 g_PortStatFieldsX10;
+extern s32 g_PortStatFieldsPerTickX100;
+/* Monotonic since boot. g_PortFieldsTicked counts the fields the simulation was
+ * actually credited with: it is advanced in lv.c beside `g_GlobalTimer +=
+ * g_ClockTimer`, so the two are the same sum by construction - including the
+ * zeroing of g_ClockTimer during a pause or a controls lock, which genuinely
+ * discards those fields. (Counting where fields are produced instead, in
+ * updateFrameCounters, made f/s read a healthy 60.0 during every pause.)
+ * g_PortTicksAdmitted (boss.c) is a different thing entirely: it counts ticks
+ * ADMITTED, before the pendingGfx backpressure guard, so it is not the rate to
+ * divide by. Both this and g_PortTickSerial deliberately survive lvlStageLoad's
+ * reset of g_GlobalTickCount, which is what stops the stat pass publishing a
+ * negative rate across a stage load. */
+extern u32 g_PortFieldsTicked;
+extern u32 g_PortTicksAdmitted;
+/* The stall cap's last verdict (frametiming.c, portTickNoteClamp): the fields a
+ * tick measured and the fields it was allowed to keep. Read as a pair - take
+ * g_PortTickClampSeq before and after; if it is unchanged, the two values
+ * belong to one clamp. Written only by the game thread, read by the hitch log
+ * (which may be on the render thread). credited < measured is simulated time
+ * the cap discarded; credited == measured means the cap did not fire. */
+extern u32 g_PortTickClampSeq;
+extern u32 g_PortTickClampMeasured;
+extern u32 g_PortTickClampCredited;
 s32 portTickHz(void);           /* 60 = classic, 0 = uncapped, else that literal rate */
 u32 portTickGateCounts(void);   /* boss.c tick admission threshold, in counts */
 u32 portTickFieldGateCounts(void); /* gate that yields exactly 60 ticks/s (front end) */
@@ -42,7 +84,11 @@ void portTickIntroPaceReset(void);
 void portTickSetHz(s32 hz);     /* midas.ini [display] tickhz; GE_TICKHZ still wins */
 void portTickSetHwPace(s32 on); /* tickhz=hw: the console's frame pacing on the 60 Hz sim (frametiming.c) */
 s32 portTickHwPace(void);       /* 1 = hold frames for the modelled N64 fields (not during demos / recording) */
-s32 portHwPaceFields(void);     /* the fields the last frame would have cost the console, 1..6 */
+s32 portHwPaceFields(void);     /* the fields the last frame would have cost the console, 1..30 */
+/* The same value, published for the hitch log to READ. Never call
+ * portHwPaceFields() from the render thread: it mutates the model and consumes
+ * the pending load charge (see frametiming.c). */
+extern s32 g_PortHwFieldsHeld;
 s32 portFastTickFixOn(void);    /* port collision fixes: tick under two fields, no demo, no Hardware pacing */
 /* Sub-field smoothing (see frametiming.c "Sub-field SMOOTHING"):
  * portAnimTicks() = fractional anim ticks this tick (== g_ClockTimer when the
@@ -80,5 +126,9 @@ void portHwNotePropdef(s32 type);
 #endif
 
 void waitForNextFrame(void);
+
+
+void updateFrameCounters(s32 deltaFrames);
+void store_osgetcount(void);
 
 #endif

@@ -255,7 +255,7 @@ OBJCOPY := $(TOOLCHAIN)objcopy
 .NOTPARALLEL: print_info create_directories $(APPROM) checksum
 
 # Phony Recipes - These targets are not files, Get Make to do something
-.PHONY: print_info create_directories build_tools prerequisites checksum all_p1 all default commonclean setupclean stanclean dataclean libultraclean codeclean clean nuke help cmdbuidler test  context extractassets forceextractassets textures convert_props convert_chrs convert_guns extract_u extract_e extract_j force_extract_u force_extract_e force_extract_j extract_rsp
+.PHONY: print_info create_directories build_tools prerequisites checksum all_p1 all default commonclean setupclean stanclean dataclean libultraclean codeclean clean nuke help cmdbuidler test port_test audio_test demo context extractassets forceextractassets textures convert_props convert_chrs convert_guns extract_u extract_e extract_j force_extract_u force_extract_e force_extract_j extract_rsp
 
 
 # this file references variables defined above: BUILD_DIR, CFLAGWARNING, INCLUDE, LCDEFS
@@ -432,6 +432,26 @@ include include/make/cmd.make
 
 
 test: checksum
+
+
+### Port (native) tests - the PC port's own suite, no ROM and no window ###
+#
+# NOT to be confused with `test` above, which builds the N64 ROM and checks its
+# checksum. These run the port's ctest suite through scripts/port/port_test.sh,
+# which prints one line per test and exits non-zero on a failure. See that
+# script's header for what a green suite does and does not prove.
+#
+#   make port_test    all ten tests
+#   make audio_test   the audio, tick and layout four
+#   make demo         tests, then the game with diagnostics on, windowed
+port_test:
+	@./scripts/port/port_test.sh --no-game
+
+audio_test:
+	@./scripts/port/port_test.sh --audio --no-game
+
+demo:
+	@./scripts/port/port_test.sh -v
 
 
 ifneq ($(filter-out context,$(MAKECMDGOALS)),)

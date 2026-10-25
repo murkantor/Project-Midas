@@ -1,4 +1,6 @@
 #include <ultra64.h>
+#include "fr.h"
+#include "game/bg.h"
 #ifndef TARGET_N64
 #include <stdio.h> /* snprintf for the profile-name rank lines */
 #endif
@@ -1302,7 +1304,7 @@ Gfx *mp_watch_menu_display(Gfx *gdl)
     s32 textheight;
     s32 m;
     s32 h1;
-    s32 h2;
+    intptr_t h2;
     /* [16], not [4]: write_playerrank_to_buffer sprintf's strings like
      * "Rank: 1st" (9 chars + null = 10) straight in - the 4-byte buffer
      * overflowed on every call (multiplayer watch-menu kills/losses/ points
@@ -1333,7 +1335,7 @@ Gfx *mp_watch_menu_display(Gfx *gdl)
     s16 x2;
     s16 viewleft;
     s32 colour;
-    s32 q;
+    intptr_t q;
  
     curplayernum = get_cur_playernum();
     player_count = getPlayerCount();
@@ -1657,10 +1659,10 @@ Gfx *mp_watch_menu_display(Gfx *gdl)
                 gdl = textRender(gdl, &x, &y, rankbuffer, ptrFontBankGothicChars, ptrFontBankGothic, 0x00ff00b0, viewleft, h1, 0, 0);
             }
  
-            q = (s32) langGet(getStringID(LMPMENU, MPMENU_STR_1C_P)); /* P */
+            q = (intptr_t) langGet(getStringID(LMPMENU, MPMENU_STR_1C_P)); /* P */
  
             // Must remain a comma expression for matching
-            h2 = (s32) langGet(getStringID(LMPMENU, MPMENU_STR_1D_KILLS)), /* KILLS */
+            h2 = (intptr_t) langGet(getStringID(LMPMENU, MPMENU_STR_1D_KILLS)), /* KILLS */
                 sprintf(rankbuffer, ascii_pnum_KILLS, (char *) q, curplayernum + 1, (char *) h2); /* -> "P<n> KILLS" */
 #ifndef TARGET_N64
             {   /* PORT: the profile's name is shown instead of P1 to P4 in game
@@ -1739,10 +1741,10 @@ Gfx *mp_watch_menu_display(Gfx *gdl)
                 gdl = textRender(gdl, &x, &y, rankbuffer, ptrFontBankGothicChars, ptrFontBankGothic, 0x00ff00b0, viewleft, h1, 0, 0);
             }
  
-            q = (s32) langGet(getStringID(LMPMENU, MPMENU_STR_1C_P)); /* P */
+            q = (intptr_t) langGet(getStringID(LMPMENU, MPMENU_STR_1C_P)); /* P */
  
             // Must remain a comma expression for matching.
-            h2 = (s32) langGet(getStringID(LMPMENU, MPMENU_STR_1E_LOSSES)), /* LOSSES */
+            h2 = (intptr_t) langGet(getStringID(LMPMENU, MPMENU_STR_1E_LOSSES)), /* LOSSES */
                 sprintf(rankbuffer, ascii_pnum_LOSSES, (char *) q, curplayernum + 1, (char *) h2); /* -> "P<n> LOSSES" */
 #ifndef TARGET_N64
             {   /* PORT: the profile's name is shown instead of P1 to P4 in game

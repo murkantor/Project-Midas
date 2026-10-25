@@ -1,4 +1,5 @@
 #include <ultra64.h>
+#include "rmon.h"
 #include "indy_commands.h"
 #include "indy_comms.h"
 
@@ -33,7 +34,7 @@ void indycommHostLoadFile(char *filename, u8 *targetloc)
     if (indy_ready)
     {
         indycmdSendLoadFile(filename,0x400000);
-        indycmdReceiveFile(response1,response2,(u32)&size,targetloc);
+        indycmdReceiveFile(response1,response2,(uintptr_t)&size,targetloc);
     }
     return;
 }

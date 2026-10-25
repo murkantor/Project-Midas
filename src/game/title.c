@@ -1,3 +1,6 @@
+#include "dyn.h"
+#include "game/frametiming.h"
+#include "game/rle.h"
 #include <ultra64.h>
 #include <PR/gbi.h>
 #include <PR/gu.h>
@@ -32,7 +35,7 @@ extern signed short sins(unsigned short x);
 
 // bss
 //CODE.bss:80069550
-s32 barrelDisplayListPtr;
+uintptr_t barrelDisplayListPtr;
 //CODE.bss:80069554
 Gfx *gunbarrelgfxListPointer;
 //CODE.bss:80069558
@@ -60,11 +63,11 @@ f32 titleTransitionY;
 //CODE.bss:80069584
 s16 word_CODE_bss_80069584;
 //CODE.bss:80069588
-s32 dword_CODE_bss_80069588;
+uintptr_t dword_CODE_bss_80069588;
 //CODE.bss:8006958C
-s32 dword_CODE_bss_8006958C;
+uintptr_t dword_CODE_bss_8006958C;
 //CODE.bss:80069590
-s32 virtualaddress;
+uintptr_t virtualaddress;
 
 /**
  * Address 80069594
@@ -232,7 +235,7 @@ Gfx *sub_GAME_7F007F30(Gfx *gdl, s32 count, Mtxf *matrix)
             if (gunbarrelTimer == BOND_EYE_ANIM_START)
             {
                 // Terrible memory read that might just freeze the game. Fixed so it wouldn't happen anymore.
-                modelSetAnimation(chrModelInstance, (struct ModelAnimation *) (PTR_ANIM_bond_eye_fire + (s32) &ptr_animation_table->data), 0, 2.0f, 0.910000026f, 16.0f);
+                modelSetAnimation(chrModelInstance, (struct ModelAnimation *) (PTR_ANIM_bond_eye_fire + (intptr_t) &ptr_animation_table->data), 0, 2.0f, 0.910000026f, 16.0f);
             }
 
             if (gunbarrelTimer == BOND_EYE_ANIM_SPEEDUP)
@@ -411,13 +414,13 @@ Gfx *load_display_rare_logo(Gfx *gdl, s32 arg1, s32 arg2, s32 arg3, s32 arg4) {
 extern void *_rarewarelogoSegmentRomStart;
 extern void *_rarewarelogoSegmentStart;
 extern void *_rarewarelogoSegmentEnd; 
-void setupRarewareLogoData(s32 address, s32 size) {
+void setupRarewareLogoData(uintptr_t address, s32 size) {
     gunbarrel_mode = 0;
     g_TitleX = 880.0f;
     D_8002A89C = -40.0f;
     intro_eye_counter = 0;
     virtualaddress = address;
-    romCopy(virtualaddress, &_rarewarelogoSegmentRomStart, ALIGN64_V2((u32)&_rarewarelogoSegmentEnd - (u32)&_rarewarelogoSegmentStart));
+    romCopy(virtualaddress, &_rarewarelogoSegmentRomStart, ALIGN64_V2((uintptr_t)&_rarewarelogoSegmentEnd - (uintptr_t)&_rarewarelogoSegmentStart));
 
 #ifndef TARGET_N64
     { /* the logo data is typed host references throughout (the segment
@@ -500,7 +503,7 @@ void sub_GAME_7F008DE4(u8 **addr, s32 *size) {
     *size -= 0x40400;
     *addr += 0x40400;
     dword_CODE_bss_80069588 = *addr;
-    romCopy(dword_CODE_bss_80069588, (void *)(s32)&unknown2, ALIGN64_V2(((u32)&unknown2_end - (u32)&unknown2)));
+    romCopy(dword_CODE_bss_80069588, (void *)(intptr_t)&unknown2, ALIGN64_V2(((uintptr_t)&unknown2_end - (uintptr_t)&unknown2)));
     rle_expand_8bit(dword_CODE_bss_80069588, dword_CODE_bss_8006958C);
 }
 
@@ -529,8 +532,8 @@ void initializeGunBarrelIntro(u8 *gfxBuffer, s32 bufferSize)
     createGunbarrelRenderHole(barrelDisplayListPtr, 0x1E);
     
     gunbarrelgfxListPointer = (Gfx*)gfxBuffer;
-    bufferSize -= 0x100;
-    gfxBuffer += 0x100;
+    bufferSize -= 32 * sizeof(Gfx);
+    gfxBuffer += 32 * sizeof(Gfx);
     
 #ifdef TARGET_N64
     sub_GAME_7F01BFF8(gunbarrelgfxListPointer, barrelDisplayListPtr + 0x80000000, 0x1E);
@@ -576,7 +579,7 @@ void initializeGunBarrelIntro(u8 *gfxBuffer, s32 bufferSize)
     modelSetAnimPlaySpeed(chrModelInstance, S_7F008E80_ANIM_SPEED, 0.0f);
 #undef S_7F008E80_ANIM_SPEED
     
-    animation = (struct ModelAnimation*)((s32)ptr_animation_table + PTR_ANIM_bond_eye_walk);
+    animation = portAnimationResolve((struct ModelAnimation*)((intptr_t)ptr_animation_table + PTR_ANIM_bond_eye_walk));
     startframe = animation->unk04 - 0x44;
     while (startframe < 0) // Very dangerous, can cause infinite loops
     {

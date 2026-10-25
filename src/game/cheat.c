@@ -1,4 +1,5 @@
 #include <os_extension.h>
+#include "game/lv.h"
 #include <ultra64.h>
 #include <bondgame.h>
 #include <bondconstants.h>

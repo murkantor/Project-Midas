@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <ultra64.h>
 #include "vi.h"
 #include "fr.h"

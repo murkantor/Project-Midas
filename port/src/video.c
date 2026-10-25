@@ -11,6 +11,10 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <ultra64.h>
+#include "port_options.h"
+#include "boot_flags.h"   /* the -n64_aa / -audio_pump / -audio_log parse */
+#include "classic_split.h" /* the one-time n64_aa -> classic_mode migration */
+#include "video_env.h"     /* the env overrides that can contradict a mode */
 
 #ifdef GE_XBOX
 /* No SDL on the console: the string/keyboard/thread stand-ins live in the
@@ -28,6 +32,7 @@
 #include "../fast3d/gfx_opengl.h"
 #endif
 #include "game/frametiming.h"   /* portTickSetHz: [display] tickhz */
+#include "tick_stats.h"         /* portTickIniValue: the tickhz text this file holds */
 #include "romdata.h"            /* romdataIsIniKey: [data] keys are not "unknown controls" */
 
 /* port_console.c: same output as the fprintf(stderr, ...) this replaced,
@@ -218,15 +223,29 @@ static int s_CfgXboxXluRetained = 1;  /* [display] xbox_xlu_retained: 0 = XLU tr
 extern uint32_t gfx_xbox_xlu_retained; /* gfx_pc.cpp */
 static int s_CfgXboxXluPlanar = 1;    /* [display] xbox_xlu_planar_units: 0 = retained XLU triangles are one sorter unit each (bisect) */
 extern uint32_t gfx_xbox_xlu_planar_units; /* gfx_pc.cpp */
-static int s_CfgN64Aa = 0;            /* [display] n64_aa: the level frame resolved the way the N64's VI
-                                       * filtered it (needs MSAA: forces at least 4x while on) - gfx_n64_aa */
+static int s_CfgN64Aa = 0;            /* [display] n64_aa: the VI AA bit ONLY - the level frame
+                                       * resolved the way the N64's VI filtered it (needs MSAA:
+                                       * floors it at 4x while on) - gfx_n64_aa. The Classic Mode
+                                       * PRESET is [display] classic_mode, the next static. */
+static int s_CfgClassicMode = 0;      /* [display] classic_mode: the Classic Mode PRESET is on.
+                                       * Owns the seven forced values (port_options.c
+                                       * sClassicKeys), the pillars, the hitches, the composite
+                                       * filter, and every "is the mode on" question. Its
+                                       * classic_n64aa part is the ONLY link to the AA bit above
+                                       * (portClassicSetsN64Aa): the preset sets the bit on entry
+                                       * and clears it on exit, and nothing else couples them. */
 extern uint32_t gfx_n64_aa;           /* gfx_pc.cpp */
 extern void gfx_set_aa(uint32_t msaa_level, uint32_t n64_aa); /* gfx_pc.cpp: latched for the render thread's next frame when it runs */
 static int videoClassicViOn(void); /* with the Classic parts table below */
 static void videoApplyAa(void)
 {
-    /* Classic Mode always runs the VI resolve: the composite pass and the soft
-     * upscale live there. The N64 AA part only switches its edge blend (gfx_vi_blend). */
+    /* The BIT decides whether the VI resolve runs at all - it is a render
+     * setting, and a player who wants N64 edges without 240p gets exactly this
+     * and nothing else. The MSAA FLOOR is the preset's: Classic Mode is the mode
+     * that promises a 4x resolve, so a bit-only player keeps whatever MSAA they
+     * chose (with videoApplyAa's own 2x minimum). That is why the two read
+     * different statics here, and it is the whole of the split inside this
+     * function. */
     const int vi = s_CfgN64Aa;
     const uint32_t floor_level = videoClassicViOn() ? 4u : 2u;
     uint32_t level = (s_CfgMsaa == 2 || s_CfgMsaa == 4 || s_CfgMsaa == 8) ? (uint32_t) s_CfgMsaa : 1u;
@@ -256,7 +275,7 @@ static int s_CfgTrueEnemyRockets = 1; /* 0 = restore the vanilla Enemy Rockets
                                        * the guard with their original
                                        * weapon right after giving them the
                                        * rocket launcher) */
-static int s_CfgShowFps = 0;          /* 1 = in-game FPS/TPS overlay strip */
+static int s_CfgShowFps = 0;          /* 1 = in-game FPS digits */
 /* what midas.ini literally contained, so the derived value can be written back
  * only when the file disagrees */
 static int s_CfgTickSeenInIni = 0;
@@ -265,6 +284,7 @@ static int s_CfgTickAsWritten = 60;
  * is parsed, and a `tickhz=` line further down has not been seen yet, so
  * writing back mid-parse would record a value from a half-read file. */
 static int s_CfgTickLoadDone = 0;
+static char s_CfgTickBuf[PORT_TICK_INI_BUF];
 static int s_CfgTickHz = 60;          /* the ini's tickhz as written (frametiming.c holds the
                                        * effective rate, which GE_TICKHZ can override - the
                                        * Port Options page must show and save the ini value) */
@@ -465,14 +485,24 @@ static s32 videoSceneMissionFresh(void);
 
 /* The render's line count (gfx_low_res) for this frame. Low Res applies on
  * mission frames only; Classic Mode also covers menus, rendering them at the
- * VI's own line count (e.g. 330 or 480) instead of squeezing to 240. */
+ * VI's own line count (e.g. 330 or 480) instead of squeezing to 240.
+ *
+ * DECIDED (Phase 3, the split's one genuinely ambiguous site): this reads the
+ * PRESET, not the AA bit. Rendering menus at the VI's line count is a promise
+ * of Classic Mode - the "classic" part is that the whole session, menus
+ * included, runs at N64 native resolution - and it is not something a player
+ * asking for edge blending has asked for. Gating it on the bit would have
+ * changed menu resolution for exactly the new player the split creates (bit on,
+ * preset off), which is a behaviour change invented by a refactor. Also kept
+ * deliberately: this preserves the OLD observable result exactly, because the
+ * preset is what the old key meant to every caller that asked this question. */
 static u32 videoRenderLines(s32 viy)
 {
     if (s_CfgLowRes && videoSceneMissionFresh())
     {
         return (u32) s_CfgLowRes;
     }
-    if (s_CfgN64Aa && viy > 0)
+    if (s_CfgClassicMode && viy > 0)
     {
         return (u32) viy;
     }
@@ -598,7 +628,7 @@ s32 portTrueEnemyRocketsEnabled(void)
     return s_CfgTrueEnemyRockets;
 }
 
-/** midas.ini [display] show_fps: the bondview FPS/TPS overlay reads this.
+/** midas.ini [display] show_fps: the bondview FPS digits read this.
  * GE_SHOWFPS env overrides either way (headless A/B, capture runs). */
 s32 portVideoShowFps(void)
 {
@@ -839,8 +869,8 @@ static void videoApplyVolumes(void);
  * 120 fps cap means a 120 Hz tick.
  *
  * Two things this deliberately will not do:
- *  - Take the tick below 60. The engine's authored rate is 60 and the raised-tick work
- *    (docs/port/tick-rate-binding.md) only goes up; a 30 fps cap still gets a 60 Hz sim.
+ *  - Take the tick below 60. The engine's authored rate is 60, and the raised-tick work
+ *    (docs/port/tick-and-field-accounting.md 13) only goes up; a 30 fps cap still gets 60 Hz.
  *  - Override tickhz=hw, the console's own frame pacing (an expert ini-only mode). */
 static void videoPersistDerivedTick(void);
 static int videoSetDisplayOption(const char *key, const char *value);
@@ -885,6 +915,10 @@ static void videoCoupleTickToMaxFps(void)
         {
             videoSetDisplayOption("tickhz", "hw");
         }
+        if (s_CfgTickLoadDone)
+        {
+            videoPersistDerivedTick(); /* a live change records itself at once, hw included */
+        }
         return;
     }
     if (s_CfgTickHz == -1)
@@ -917,24 +951,36 @@ static void videoCoupleTickToMaxFps(void)
 }
 
 /** Write the derived tick back once when an existing midas.ini disagrees, so a stale hand-set
- * tickhz does not mislead readers. A file without a tickhz line gets none, and
- * hw is never touched. */
+ * tickhz does not mislead readers. A file without a tickhz line gets none.
+ *
+ * This includes writing the literal `hw` when maxfps is -1. It did not, until F3-A: the
+ * function returned early on the resolved -1, so a session that ran hw pacing left whatever
+ * numeric tickhz the file already had, and the file described a different mode from the one
+ * that ran. That is the invariant docs/port/tick-and-field-accounting.md §11.3 states - the
+ * writer must never emit a pair the loader resolves differently from what was running - and
+ * it is what the loader's own tickhz=hw arm records as written (-1). */
 static void videoPersistDerivedTick(void)
 {
-    char buf[16];
+    char wasbuf[PORT_TICK_INI_BUF];
+    const char *was = portTickIniValue(s_CfgTickAsWritten, wasbuf, sizeof(wasbuf));
+    const char *val = portTickIniValue(s_CfgTickHz, s_CfgTickBuf, sizeof(s_CfgTickBuf));
     const char *keys[1];
     const char *vals[1];
 
-    if (s_CfgTickHz == -1 || !s_CfgTickSeenInIni || s_CfgTickHz == s_CfgTickAsWritten)
+    if (!s_CfgTickSeenInIni || s_CfgTickHz == s_CfgTickAsWritten || val == NULL)
     {
-        return;
+        return; /* no tickhz line to correct, already in step, or no text for this state */
     }
-    SDL_snprintf(buf, sizeof(buf), "%d", s_CfgTickHz);
     keys[0] = "tickhz";
-    vals[0] = buf;
-    portConLogf("ge: video: tickhz follows maxfps - midas.ini %d -> %d\n", s_CfgTickAsWritten, s_CfgTickHz);
-    portIniWriteStrs("[display]", keys, vals, 1);
-    s_CfgTickAsWritten = s_CfgTickHz;
+    vals[0] = val;
+    /* Only claim the file was corrected if it was: portIniWriteStrs no-ops under GE_WINDOW /
+     * GE_NOINISAVE, and recording the value anyway would leave the file stale for the rest of
+     * the session with nothing that retries it. */
+    if (portIniWriteStrs("[display]", keys, vals, 1))
+    {
+        portConLogf("ge: video: tickhz follows maxfps - midas.ini %s -> %s\n", was != NULL ? was : "(none)", val);
+        s_CfgTickAsWritten = s_CfgTickHz;
+    }
 }
 
 /* [display] classic_res .. classic_hitches: which parts Classic Mode applies
@@ -976,10 +1022,39 @@ s32 portClassicPart(s32 i)
     return (i >= 0 && i < CLASSIC_PART_COUNT) ? ((s_CfgClassicParts >> i) & 1) : 0;
 }
 
-/* Classic Mode is on and its N64 AA part too: the VI edge blend runs (videoApplyAa) */
+/* Classic Mode is on and its N64 AA part too: the VI edge blend runs at the
+ * mode's 4x floor (videoApplyAa).
+ *
+ * DECIDED (Phase 3): the PRESET here, not the bit. This answers "does the mode
+ * promise the full N64 resolve", and the mode is the preset; the bit answers
+ * "run the resolve", in videoApplyAa above. Reading the bit here would have
+ * made the floor follow a render setting the preset may not even own (the
+ * classic_n64aa part can be off), and the old observable result - preset on,
+ * part on => 4x - is what this preserves. The helper survives the split for
+ * that reason: it is the conjunction of two things that are now separate keys,
+ * and naming it keeps videoApplyAa readable. */
 static int videoClassicViOn(void)
 {
-    return s_CfgN64Aa && portClassicPart(CLASSIC_PART_N64AA);
+    return s_CfgClassicMode && portClassicPart(CLASSIC_PART_N64AA);
+}
+
+/** 1 = the PRESET owns the AA bit: its classic_n64aa part is on, so turning
+ *  Classic Mode on sets [display] n64_aa and turning it off clears it.
+ *  port_options.c's classicSyncAaBit is the only caller, and this part is the
+ *  only link between the two keys - the bit itself never touches the preset. */
+s32 portClassicSetsN64Aa(void)
+{
+    return portClassicPart(CLASSIC_PART_N64AA);
+}
+
+/** 1 while Classic Mode is on ([display] classic_mode, the classic_toggle key's state).
+ *  Read by the -n64_aa boot flag, which reports whether its apply took, and by
+ *  the GE_TICKHZ clash report. Renamed from portVideoN64AaOn in the Phase 3
+ *  split: the old name said "the AA is on" and returned the preset, which is
+ *  how a render setting came to answer a mode question. */
+s32 portClassicModeOn(void)
+{
+    return s_CfgClassicMode;
 }
 
 /** Load hitches are a Classic part; they still only happen under hardware pacing. */
@@ -1059,6 +1134,17 @@ static int videoLowResLines(const char *value)
     return 1080;
 }
 
+/** The tick rate a `tickhz` text denotes, as written: -1 for hw pacing, else the number.
+ *
+ * One rule, used by both sides that need it - the handler below decides on it, and the ini
+ * parse loop records the FILE's claim with it. They must agree: the writer compares the
+ * recorded claim against the running rate, so a second spelling of "is this hw" would let them
+ * drift and silently stop correcting the file. */
+static int videoTickTextValue(const char *text)
+{
+    return (SDL_strcasecmp(text, "hw") == 0 || SDL_atoi(text) == -1) ? -1 : SDL_atoi(text);
+}
+
 static int videoSetDisplayOption(const char *key, const char *value)
 {
     if (SDL_strcasecmp(key, "window_width") == 0)  { s_CfgWindowW = SDL_atoi(value); return 1; }
@@ -1081,6 +1167,12 @@ static int videoSetDisplayOption(const char *key, const char *value)
     if (SDL_strcasecmp(key, "mipmaps") == 0
         || SDL_strcasecmp(key, "hw_mipmaps") == 0) { s_CfgMipmaps = SDL_atoi(value) != 0; return 1; }
     if (SDL_strcasecmp(key, "n64_aa") == 0)        { s_CfgN64Aa = SDL_atoi(value) != 0; return 1; }
+    if (SDL_strcasecmp(key, "classic_mode") == 0)  { s_CfgClassicMode = SDL_atoi(value) != 0; return 1; }
+    /* the one-time n64_aa -> classic_mode split marker: what it MEANS is
+     * classic_split.h's decision, and videoLoadConfig is the only reader. It is
+     * recognised here so an already-migrated file is not reported as an
+     * unknown control on every boot. */
+    if (SDL_strcasecmp(key, "classic_split") == 0) { return 1; }
     if (SDL_strcasecmp(key, "room_cache") == 0)    { s_CfgRoomCache = SDL_atoi(value); if (s_CfgRoomCache < 0 || s_CfgRoomCache > 2) s_CfgRoomCache = 0; if (s_CfgRoomCache == 0) { s_RoomCacheBeforeHw = 0; /* room_cache: an explicit 0 is not put back */ } if (s_CfgTickHz == -1 && s_CfgRoomCache != 0) { portConLogf("ge: video: tickhz=hw - room_cache forced 0\n"); s_RoomCacheBeforeHw = s_CfgRoomCache; s_CfgRoomCache = 0; } portRoomCacheSetMode(s_CfgRoomCache); return 1; }
 #ifdef GE_XBOX
     if (SDL_strcasecmp(key, "xbox_mode") == 0)
@@ -1132,8 +1224,13 @@ static int videoSetDisplayOption(const char *key, const char *value)
     if (SDL_strcasecmp(key, "tickhz") == 0)        {
         /* "hw" / -1: the console's frame pacing on the 60 Hz sim
          * (frametiming.c portTickHwPace); room_cache is forced off with it
-         * below - the fill model reads the interpreter's triangles */
-        if (SDL_strcasecmp(value, "hw") == 0 || SDL_atoi(value) == -1)
+         * below - the fill model reads the interpreter's triangles.
+         *
+         * This handler does NOT record what midas.ini said (s_CfgTickAsWritten):
+         * videoCoupleTickToMaxFps calls it with "hw" while the file is still
+         * being read, so a recording here would claim the file said hw when it
+         * said a number. The ini parse loop records the file's own line. */
+        if (videoTickTextValue(value) == -1)
         {
 #ifdef GE_XBOX
             /* the console runs the N64's 60 Hz cadence and never hw
@@ -1144,11 +1241,6 @@ static int videoSetDisplayOption(const char *key, const char *value)
             s_CfgTickHz = 60;
             portTickSetHwPace(0);
             portTickSetHz(60);
-            if (!s_CfgTickLoadDone)
-            {
-                s_CfgTickSeenInIni = 1;
-                s_CfgTickAsWritten = -1;
-            }
             return 1;
 #endif
             s_CfgTickHz = -1;
@@ -1161,18 +1253,10 @@ static int videoSetDisplayOption(const char *key, const char *value)
                 s_CfgRoomCache = 0;
                 portRoomCacheSetMode(0);
             }
-            if (!s_CfgTickLoadDone)
-            {   /* an ini tickhz=hw: record it as the numeric arm does, or
-                 * leaving hw via Max FPS never rewrites it. */
-                s_CfgTickSeenInIni = 1;
-                s_CfgTickAsWritten = -1;
-            }
             return 1;
         }
         portTickSetHwPace(0);
         s_CfgTickHz = SDL_atoi(value);
-        s_CfgTickSeenInIni = 1;
-        s_CfgTickAsWritten = s_CfgTickHz;
 #ifdef GE_XBOX
         /* More than one gfx task per vblank queues two flips in pbkit's ring
          * and tears the display, so the console runs the N64's
@@ -1374,7 +1458,7 @@ static int s_MipmapsEnv = -1;   /* GE_HWMIPMAPS: -1 unset, else 0/1 */
 
 static u32 videoMipmapMode(void)
 {
-    const int on = (s_MipmapsEnv >= 0) ? s_MipmapsEnv : (s_CfgN64Aa && portClassicPart(CLASSIC_PART_MIPMAPS));
+    const int on = (s_MipmapsEnv >= 0) ? s_MipmapsEnv : (s_CfgClassicMode && portClassicPart(CLASSIC_PART_MIPMAPS));
 
     if (!on)
     {
@@ -1451,6 +1535,7 @@ s32 portVideoOptionGet(const char *key, s32 *out)
     if (SDL_strcasecmp(key, "mipmaps") == 0
         || SDL_strcasecmp(key, "hw_mipmaps") == 0)    { *out = s_CfgMipmaps;      return 1; }
     if (SDL_strcasecmp(key, "n64_aa") == 0)        { *out = s_CfgN64Aa;        return 1; }
+    if (SDL_strcasecmp(key, "classic_mode") == 0)  { *out = s_CfgClassicMode;   return 1; }
     /* the CHOSEN sample count, not the effective one: n64_aa floors it at 4x
      * (videoApplyAa) and a row that silently showed 4 after you picked 2
      * would look broken. The n64 aa row above it says it needs MSAA. */
@@ -1634,7 +1719,16 @@ s32 portVideoOptionSet(const char *key, s32 value)
     else if (SDL_strcasecmp(key, "n64_aa") == 0 || SDL_strcasecmp(key, "msaa") == 0)
     {
         videoApplyAa(); /* live: gfx_start_frame re-allocates the level framebuffer on the change (render thread: at its next frame start) */
-        videoApplyMipmaps(); /* Classic Mode carries the mipmaps */
+    }
+    else if (SDL_strcasecmp(key, "classic_mode") == 0)
+    {
+        /* The preset owns the MSAA floor (videoApplyAa) AND the mipmap mode
+         * (videoMipmapMode), so one key here covers both. The bit's own arm
+         * above stopped refreshing the mipmaps at the split: they no longer
+         * depend on it, and the choke point writes classic_mode before the bit
+         * it syncs, so the mipmaps are already right by the time n64_aa lands. */
+        videoApplyAa();
+        videoApplyMipmaps();
     }
     else if (videoClassicPartIndex(key) == CLASSIC_PART_N64AA)
     {
@@ -2283,6 +2377,7 @@ static void videoWriteDefaultIni(void)
     fprintf(f, "filter_2d=%d\n", s_CfgFilter2D);
     fprintf(f, "low_res=%d\n", s_CfgLowRes);
     fprintf(f, "n64_aa=%d\n", s_CfgN64Aa ? 1 : 0);
+    fprintf(f, "classic_mode=%d\n", s_CfgClassicMode ? 1 : 0);
     fprintf(f, "room_cache=%d\n", s_CfgRoomCache);
     fprintf(f, "tri_hoist=%d\n", s_CfgTriHoist ? 1 : 0);
     fprintf(f, "fix_shootthrough=%d\n", s_CfgFixShootThrough);
@@ -2298,6 +2393,10 @@ static void videoWriteDefaultIni(void)
     if (s_CfgTickHz == -1)
     {
         fprintf(f, "tickhz=hw\n");
+        /* the file now HAS a tickhz line, exactly as the numeric arm records it, or
+         * videoPersistDerivedTick would rewrite it on the first live maxfps change */
+        s_CfgTickSeenInIni = 1;
+        s_CfgTickAsWritten = -1;
     }
     else
     {
@@ -3197,6 +3296,11 @@ static void videoLoadConfig(void)
     int moveUpgraded = 0; /* the binds carry VIDEO_MOVE_UPGRADE_KEY */
     int iniHadBinds = 0;  /* midas.ini still has bind lines (an older file) */
     int recBinds;         /* the keyboard's record had a [binds] section */
+    /* the one-time n64_aa -> classic_mode split (classic_split.h): what THIS
+     * FILE carried. Set while parsing, because only a file can answer them - a
+     * live set of the same key must not look like a written line. */
+    int iniHadClassicMode = 0;
+    int iniHadSplitMarker = 0;
 
     videoBindCountCheck();
     SDL_memset(sPortBindSeen, 0, sizeof(sPortBindSeen));
@@ -3268,9 +3372,66 @@ static void videoLoadConfig(void)
             {
                 portConLogf("ge: midas.ini: unknown control \"%s\"\n", key);
             }
+            else if (SDL_strcasecmp(key, "tickhz") == 0)
+            {
+                /* What THIS FILE says, recorded here and nowhere else. The tickhz handler in
+                 * videoSetDisplayOption cannot do it: videoCoupleTickToMaxFps calls that handler
+                 * with "hw" while the file is still being read, and recording that would claim the
+                 * file said hw when it said a number - which is how F3-A stayed invisible, and
+                 * then made the first fix order-dependent (it worked only when maxfps came
+                 * first). This is the value as written, before any clamp: if the file's number is
+                 * not what runs, the writer has to correct it. */
+                s_CfgTickSeenInIni = 1;
+                s_CfgTickAsWritten = videoTickTextValue(val);
+            }
+        }
+        /* The presence of these two, and of the marker the split writes, is what
+         * decides whether the migration below runs. Recorded here and not in a
+         * setter for the reason the tickhz note above gives: only the FILE may
+         * answer "did this one already go through the split?". */
+        if (SDL_strcasecmp(key, "classic_mode") == 0)
+        {
+            iniHadClassicMode = 1;
+        }
+        else if (SDL_strcasecmp(key, "classic_split") == 0)
+        {
+            iniHadSplitMarker = 1;
         }
     }
     fclose(f);
+
+    { /* The one-time n64_aa -> classic_mode split, once per file. An old
+       * `n64_aa=1` meant BOTH "Classic Mode is on" and "the AA bit is set", so
+       * it becomes both keys; the mapping and its guard are classic_split.c's.
+       * The marker lands in the same write, so this cannot run twice - and a
+       * player who later turns the preset off must not have it switched back on
+       * by a migration that thought it knew better. A no-ini start never
+       * reaches here: videoWriteDefaultIni already emits both keys. */
+        PortClassicSplitIn in;
+        PortClassicSplitOut out;
+
+        in.n64_aa = s_CfgN64Aa;
+        in.classic_mode = s_CfgClassicMode;
+        in.had_classic_mode = iniHadClassicMode;
+        in.had_split_marker = iniHadSplitMarker;
+        portClassicSplit(&in, &out);
+        s_CfgClassicMode = out.classic_mode;
+        if (out.migrate)
+        {
+            char bit[8];
+            char mode[8];
+            const char *keys[2] = { "classic_mode", "classic_split" };
+            const char *vals[2] = { mode, "1" };
+
+            SDL_snprintf(bit, sizeof(bit), "%d", s_CfgN64Aa ? 1 : 0);
+            SDL_snprintf(mode, sizeof(mode), "%d", s_CfgClassicMode ? 1 : 0);
+            if (portIniWriteStrs("[display]", keys, vals, 2))
+            {
+                portConLogf("ge: midas.ini: n64_aa split - classic_mode=%s (the preset) beside "
+                            "n64_aa=%s (the AA bit)\n", mode, bit);
+            }
+        }
+    }
 
     /* The keyboard's record wins over any old [controls] lines; a record
      * without binds takes them over, once, and midas.ini drops the section. */
@@ -4787,6 +4948,166 @@ static void videoIniWritableCheck(void)
                      "Controlled Folder Access may be blocking it.");
 }
 
+/* ---- boot flags: the three things a diagnostic launch always wants --------
+ *
+ * `ProjectMidas -classic -audio_pump -audio_log` starts in Classic Mode with the
+ * pump block and the pump log already on, so a capture run needs no console and
+ * no ini edit. They are ordinary argument flags, mix-and-match, and each is
+ * independent of the others. `-n64_aa` is the same flag as `-classic`: the mode
+ * was named after the key it used to share with the AA bit, the split gave it
+ * its own, and the old spelling stays as a silent alias so capture scripts and
+ * documented commands keep working.
+ *
+ * WHY NOT ENV VARS: `-audio_pump`/`-audio_log` are console settings, not ini
+ * keys, and the only existing way to set them was GE_CONCMD (a console line at
+ * the first rendered frame). Flags are the same information, reachable before
+ * the first frame, and named after the console verbs so the two agree.
+ *
+ * The matching rules - dashes, separators, case, and why a bare word is not a
+ * flag - live in port/include/boot_flags.h with a test under ctest, because a
+ * flag that is silently ignored leaves no trace otherwise. */
+static PortBootFlags s_BootFlags;
+
+/* 1 when the flag was given, and the thing it asks for is not already true. */
+s32 videoBootClassicWanted(void)
+{
+    return s_BootFlags.classic && s_CfgClassicMode == 0;
+}
+
+s32 videoBootAudioPump(void)
+{
+    return s_BootFlags.audio_pump;
+}
+
+s32 videoBootAudioLog(void)
+{
+    return s_BootFlags.audio_log;
+}
+
+/* Read the flags, and say what was understood. An argument that starts with '-'
+ * and matches nothing KNOWN is named in the log: the whole point of a boot flag
+ * is that a run is self-documenting, and a flag that does nothing silently is the
+ * failure this branch keeps finding. Not an error - the rest of this command
+ * line ignores unknown flags too.
+ *
+ * The test is portBootFlagKnown(), not a local list. The first cut re-matched
+ * the names here and reported `--rom-file=/x.n64` and `--lang=jp` as ignored -
+ * the documented spelling of two flags that work - because a hand-written list
+ * forgets the `=value` form. */
+void videoParseBootArgs(int argc, char **argv)
+{
+    int i;
+
+    portBootFlagsParse(argc, argv, &s_BootFlags);
+
+    for (i = 1; i < argc; i++)
+    {
+        const char *a = argv[i];
+
+        if (a == NULL || a[0] != '-')
+        {
+            continue;   /* a bare word is the ROM path or a value, not a flag */
+        }
+        if (a[1] == '\0')
+        {
+            continue;   /* a lone "-" is a stdin convention, not a typo */
+        }
+        if (!portBootFlagKnown(a))
+        {
+            portConLogf("ge: video: ignoring argument '%s' (not a boot flag)\n", a);
+        }
+    }
+}
+
+/* Apply the boot flags that must land BEFORE the renderer is created.
+ *
+ * -audio_pump / -audio_log are plain setters and safe anywhere.
+ *
+ * -n64_aa goes through portClassicToggle(), the same entry point as Tab, so a
+ * flag launch and a keypress cannot drift apart: it is Classic Mode, all of it
+ * (240p, maxfps=-1, MSAA, the pillars, the filter), not just the AA bit - which
+ * since the Phase 3 split is a separate key it happens to reach through the
+ * preset's classic_n64aa part. The GUARD matters: entering the mode saves the
+ * current values into classic_saved before forcing its own, so entering when
+ * Classic Mode is already on would overwrite the pre-classic snapshot with
+ * classic values and a later Tab-off would have nothing to restore.
+ * `!s_CfgClassicMode` makes it idempotent - and the option table's choke point
+ * (optSet) refuses a same-value set for the same reason, so this is belt and
+ * braces rather than the only defence.
+ *
+ * Consequence, stated rather than discovered: this WRITES midas.ini, exactly as
+ * pressing Tab does, so the mode persists after the process exits. That is the
+ * behaviour a player asked for when they pressed the key; a launch that must
+ * leave the file alone sets GE_NOINISAVE (the parts still apply, in memory). */
+static void videoApplyBootArgs(void)
+{
+    extern void portClassicToggle(void);    /* port_options.c; weak absent headless */
+    extern void portAudioPumpStatsSet(s32 on);  /* audio_pc.c */
+    extern void portAudioPumpLogSet(s32 on);    /* audio_pc.c */
+    extern char *getenv(const char *);
+
+    if (videoBootClassicWanted())
+    {
+        portClassicToggle();
+        portConLogf("ge: video: %s -> Classic Mode on (%s)\n",
+                    (s_BootFlags.classic_spelling != NULL) ? s_BootFlags.classic_spelling : "-classic",
+                    portClassicModeOn() ? "applied" : "did not apply");
+    }
+    /* GE_TICKHZ wins the tick rate (portTickHz reads it before everything),
+     * while Classic Mode sets up hardware pacing - and portTickHwPace() does not
+     * look at the rate, so the hold is still priced. The result is a raised tick
+     * under a hw hold, which is not a documented mode. It is left permitted
+     * rather than refused - both knobs are diagnostics and a reader may be
+     * measuring exactly that - but it is never silent, because a mode that
+     * exists only by accident is the defect class this branch keeps finding.
+     *
+     * The test is the RESULTING state, not the boot flag: gating it on
+     * videoBootClassicWanted() left the identical combination silent whenever
+     * Classic Mode was already on - from n64_aa=1 in midas.ini, or from a Tab
+     * press in a previous session - which is the case a reader is least likely
+     * to have in mind. */
+    if (portEnvTickClash(portClassicModeOn(), getenv("GE_TICKHZ") != NULL))
+    {
+        portConLogf("ge: video: Classic Mode with GE_TICKHZ set - the tick rate is "
+                    "GE_TICKHZ's, not hw pacing's 60, and holds are still priced.\n");
+    }
+    if (s_BootFlags.audio_pump)
+    {
+        portAudioPumpStatsSet(1);
+        portConLogf("ge: video: -audio_pump -> the pump block is on\n");
+    }
+    if (s_BootFlags.audio_log)
+    {
+        portAudioPumpLogSet(1);
+        portConLogf("ge: video: -audio_log -> Data/Logs/audio_pump.log\n");
+    }
+    if (s_BootFlags.skip_screens != 0)
+    {
+        portConLogf("ge: video: -skip -> %s\n",
+                    (s_BootFlags.skip_screens < 0) ? "every boot screen, landing on the file select"
+                                                   : "the first boot screens");
+    }
+    if (s_BootFlags.stage != NULL)
+    {
+        portConLogf("ge: video: -stage %s -> straight into the mission\n", s_BootFlags.stage);
+    }
+}
+
+/** -skip [N]: boot screens to skip, 0 = none, -1 = all of them. Read once per
+ *  frontend tick by front.c's boot skip, so the chain lives in one place. */
+s32 videoBootSkipScreens(void)
+{
+    return (s32) s_BootFlags.skip_screens;
+}
+
+/** -stage <name>: the mission to launch directly, or NULL. The same string
+ *  GE_STAGE takes; front.c prefers this over the environment so a script can
+ *  write the flag instead of an env assignment. */
+const char *videoBootStage(void)
+{
+    return s_BootFlags.stage;
+}
+
 s32 videoInit(void)
 {
     struct GfxInitSettings set = {0}; /* zero the fields we don't set */
@@ -4798,6 +5119,129 @@ s32 videoInit(void)
     }
     videoLoadConfig(); /* midas.ini (needs no SDL init - scancode names are static) */
     videoIniWritableCheck();
+
+    /* ENV OVERRIDES FIRST, THEN THE BOOT FLAGS. The precedence is deliberate and
+     * it is command line over environment, the usual one: the flags are the more
+     * specific request and they are what a script is written with.
+     *
+     * It also removes a half-applied mode. These two used to be applied BELOW,
+     * after videoApplyBootArgs() - so `GE_N64AA=0 -n64_aa` ran the whole Classic
+     * Mode apply (forcing low_res=240, maxfps=-1, msaa) and then cleared the flag
+     * underneath it, leaving Classic Mode's settings in force with Classic Mode
+     * reported off. Reading the env first means the flag always sees the value it
+     * is overriding. */
+    { /* [display] n64_aa (the AA BIT): GE_N64AA=0/1 overrides the ini for A/B.
+       *
+       * DECIDED (Phase 3): it sets the BIT and only the bit. The name says AA,
+       * and the preset now has its own key - so `GE_N64AA=1` no longer forces
+       * Classic Mode the way it did while one key meant both. That is a
+       * behaviour change, stated in CLI.md rather than left to be discovered by
+       * someone's A/B script silently measuring something else.
+       *
+       * No GE_CLASSICMODE is added beside it, deliberately: the preset has a key
+       * and a boot flag, and a preset applied from an environment variable
+       * would have to run the transition - which snapshots the player's values
+       * and WRITES midas.ini. The GE_* knobs in videoInit are values, not
+       * actions; -n64_aa already exists for the action, and it says what it
+       * writes. */
+        extern char *getenv(const char *);
+        const char *e = getenv("GE_N64AA");
+        if (e != NULL)
+        {
+            s_CfgN64Aa = (e[0] != '0');
+        }
+    }
+    { /* [display] low_res: GE_LOWRES=1/0 overrides the ini for A/B. */
+        extern char *getenv(const char *);
+        const char *e = getenv("GE_LOWRES"); /* 0 / 1 (= 240) / 240 / 480 / 720 / 1080 */
+        if (e != NULL)
+        {
+            s_CfgLowRes = videoLowResLines(e);
+        }
+    }
+
+    { /* [display] room_cache / tri_hoist (interpreter work from the Xbox port):
+       * GE_ROOMCACHE=0/1/2 and GE_TRIHOIST=0/1 override
+       * the ini for A/B (the shot harness runs both ways).
+       *
+       * BEFORE the boot flags, with the other env overrides: Classic Mode sets
+       * maxfps=-1, and hw pacing forces room_cache to 0 (the fill model reads
+       * the interpreter's triangles). Applied after the flags, GE_ROOMCACHE=2
+       * put room_cache back ON under hardware pacing, silently - the same
+       * half-applied mode the GE_N64AA block above was moved to remove. */
+        extern char *getenv(const char *);
+        const char *e = getenv("GE_ROOMCACHE");
+        {
+            const PortEnvRoomCache rc = portEnvRoomCache(e != NULL, (e != NULL) ? SDL_atoi(e) : 0,
+                                                         s_CfgTickHz == -1);
+
+            if (rc.touched)
+            {
+                if (rc.refused)
+                {
+                    portConLogf("ge: video: GE_ROOMCACHE=%s ignored - tickhz=hw forces room_cache 0 "
+                                "(the fill model reads the interpreter's triangles)\n", e);
+                }
+                s_CfgRoomCache = rc.value;
+                portRoomCacheSetMode(s_CfgRoomCache);
+            }
+        }
+        e = getenv("GE_TRIHOIST");
+        if (e != NULL)
+        {
+            s_CfgTriHoist = (e[0] != '0');
+            gfx_tri_hoist = s_CfgTriHoist ? 1u : 0u;
+        }
+        portConLogf("ge: video: room_cache=%d tri_hoist=%d\n", s_CfgRoomCache, s_CfgTriHoist);
+    }
+
+    /* The boot flags, after the ini and after the env overrides (so they win),
+     * and before the renderer is created below - Classic Mode forces msaa, which
+     * has to be in place before gfx_init. */
+    videoApplyBootArgs();
+
+    /* Classic Mode reported on, but its settings are not the classic ones.
+     *
+     * Three doors reach this state and none of them runs the preset: a
+     * hand-edited n64_aa=1, GE_N64AA=1, and an env override applied while the
+     * mode was already on. The -n64_aa flag cannot repair any of them - its
+     * videoBootClassicWanted() guard declines to act on a mode that is already
+     * on, which is correct, because re-entering would overwrite the player's
+     * saved values with the forced ones. So the half-state is named here rather
+     * than silently run, and `cl_classic fix` is the repair.
+     *
+     * This is the only place both the ini value and the env override are
+     * visible, which is why the check lives here and not in the loader. */
+    {
+        extern s32 portClassicMismatchParts(s32 *idx, s32 max);
+        extern const char *portClassicKey(s32 i);
+        s32 idx[16];
+        s32 n;
+        s32 i;
+
+        n = portClassicMismatchParts(idx, (s32) (sizeof(idx) / sizeof(idx[0])));
+        if (n > 0)
+        {
+            char names[192];
+            size_t at = 0;
+
+            names[0] = '\0';
+            for (i = 0; i < n && i < (s32) (sizeof(idx) / sizeof(idx[0])); i++)
+            {
+                const char *k = portClassicKey(idx[i]);
+                const int wrote = snprintf(names + at, sizeof(names) - at, "%s%s",
+                                           (at > 0) ? ", " : "", (k != NULL) ? k : "?");
+
+                if (wrote <= 0 || (size_t) wrote >= sizeof(names) - at)
+                {
+                    break;   /* truncated: the count is still right */
+                }
+                at += (size_t) wrote;
+            }
+            portConLogf("ge: video: Classic Mode is on but %d of its settings are not classic (%s)"
+                        " - `cl_classic fix` repairs it\n", (int) n, names);
+        }
+    }
 
     { /* GE_WINDOW=WxH: override midas.ini window size (automated capture runs
        * verify widescreen without editing the user's config) */
@@ -4862,13 +5306,9 @@ s32 videoInit(void)
     {
         portConLogf("ge: midas.ini: msaa=%d not supported (use 1/2/4/8)\n", s_CfgMsaa);
     }
-    { /* [display] n64_aa: GE_N64AA=0/1 overrides the ini for A/B */
-        extern char *getenv(const char *);
-        const char *e = getenv("GE_N64AA");
-        if (e != NULL)
-        {
-            s_CfgN64Aa = (e[0] != '0');
-        }
+    { /* [display] n64_aa: already applied above, before the boot flags, so the
+       * flags take precedence over it. Kept here as a note, not a second read:
+       * reading it again would undo -n64_aa. */
     }
     videoApplyAa();
     if (s_CfgAnisotropy >= 2)
@@ -4876,35 +5316,9 @@ s32 videoInit(void)
         gfx_anisotropy = (s_CfgAnisotropy > 16) ? 16u : (uint32_t)s_CfgAnisotropy;
     }
     gfx_filter_2d = s_CfgFilter2D != 0;
-    { /* [display] low_res: whole-game 240p render scaled to the window (very low power machines).
-       * GE_LOWRES=1/0 overrides the ini for A/B. */
-        extern char *getenv(const char *);
-        const char *e = getenv("GE_LOWRES"); /* 0 / 1 (= 240) / 240 / 480 / 720 / 1080 */
-        if (e != NULL)
-        {
-            s_CfgLowRes = videoLowResLines(e);
-        }
-        /* gfx_low_res itself is gated per frame in videoStartFrame -
-         * levels only, never the menus */
-    }
-    { /* [display] room_cache / tri_hoist (interpreter work from the Xbox port):
-       * GE_ROOMCACHE=0/1/2 and GE_TRIHOIST=0/1 override
-       * the ini for A/B (the shot harness runs both ways). */
-        extern char *getenv(const char *);
-        const char *e = getenv("GE_ROOMCACHE");
-        if (e != NULL)
-        {
-            s_CfgRoomCache = SDL_atoi(e);
-            if (s_CfgRoomCache < 0 || s_CfgRoomCache > 2) s_CfgRoomCache = 0;
-            portRoomCacheSetMode(s_CfgRoomCache);
-        }
-        e = getenv("GE_TRIHOIST");
-        if (e != NULL)
-        {
-            s_CfgTriHoist = (e[0] != '0');
-            gfx_tri_hoist = s_CfgTriHoist ? 1u : 0u;
-        }
-        portConLogf("ge: video: room_cache=%d tri_hoist=%d\n", s_CfgRoomCache, s_CfgTriHoist);
+    { /* gfx_low_res itself is gated per frame in videoStartFrame -
+       * levels only, never the menus. GE_LOWRES was applied above, before the
+       * boot flags, so -n64_aa's forced 240 wins over it. */
     }
     { /* [display] hw_mipmaps: N64 mip chains on G_TL_LOD draws (reduces Low Res
        * moire). GE_HWMIPMAPS=0/1 overrides the ini for A/B. */
@@ -4913,6 +5327,15 @@ s32 videoInit(void)
         if (e != NULL)
         {
             s_MipmapsEnv = SDL_atoi(e) != 0;
+            /* Mipmaps belong to Classic Mode, so this knob can contradict a mode
+             * that reports itself on. It still wins - it is a diagnostic - but it
+             * does not win silently. Nothing else logs the mipmap mode, so this
+             * line is the only way to see the contradiction. */
+            if (portEnvMipmapClash(s_CfgClassicMode, portClassicPart(CLASSIC_PART_MIPMAPS), s_MipmapsEnv))
+            {
+                portConLogf("ge: video: GE_HWMIPMAPS=0 with Classic Mode on - mipmaps off "
+                            "for this run, though Classic Mode turns them on\n");
+            }
         }
         gfx_mipmaps = videoMipmapMode();
     }
@@ -5470,7 +5893,7 @@ s32 portPausePillars(void)
  * of Classic Mode, not of the Pause Pillars option. */
 s32 portClassicPillars(void)
 {
-    return s_CfgN64Aa && portClassicPart(CLASSIC_PART_PILLARS);
+    return s_CfgClassicMode && portClassicPart(CLASSIC_PART_PILLARS);
 }
 
 /** midas.ini [display] always_crosshair (GE_ALWAYSCROSSHAIR=0/1 forces) - the

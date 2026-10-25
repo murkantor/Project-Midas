@@ -1,4 +1,9 @@
 #include <ultra64.h>
+#include "game/cleanup_alarms.h"
+#include "game/initactorpropstuff.h"
+#include "game/music_0D2720.h"
+#include "game/objective_status.h"
+#include "game/sky.h"
 #include <math.h>
 #include <os_extension.h>
 #include <PR/libaudio.h>
@@ -216,6 +221,12 @@ s32 g_DebugPortalsInputBuffer2 = 0;
 s32 g_DebugPortalsInputBuffer3 = 0;
 s32 g_DebugPortalsInputBuffer4 = 0;
 
+#ifdef __APPLE__
+#define g_DebugPortalsInputBufferSource1 g_DebugPortalsInputBuffer1
+#define g_DebugPortalsInputBufferSource2 g_DebugPortalsInputBuffer2
+#define g_DebugPortalsInputBufferSource3 g_DebugPortalsInputBuffer3
+#define g_DebugPortalsInputBufferSource4 g_DebugPortalsInputBuffer4
+#else
 extern s32 g_DebugPortalsInputBufferSource1;
 extern s32 g_DebugPortalsInputBufferSource2;
 extern s32 g_DebugPortalsInputBufferSource3;
@@ -225,6 +236,7 @@ extern s32 g_DebugPortalsInputBufferSource4;
 #pragma weak g_DebugPortalsInputBufferSource2 = g_DebugPortalsInputBuffer2
 #pragma weak g_DebugPortalsInputBufferSource3 = g_DebugPortalsInputBuffer3
 #pragma weak g_DebugPortalsInputBufferSource4 = g_DebugPortalsInputBuffer4
+#endif
 
 /**
  * Something debug related in the MP manage method.
@@ -262,7 +274,7 @@ void lvInit(void)
     s32 size;
 
     debTryAdd(&lvl_c_debug_notice_list, "lv_c_debug");
-    size = (s32)&_fontdlSegmentRomEnd - (s32)&_fontdlSegmentRomStart;
+    size = (intptr_t)&_fontdlSegmentRomEnd - (intptr_t)&_fontdlSegmentRomStart;
     lvl_c_debug_notice_list = 1;
     ptr_font_DL = mempAllocBytesInBank(size, MEMPOOL_PERMANENT);
     romCopy(ptr_font_DL, &_fontdlSegmentRomStart, size);
@@ -1143,6 +1155,13 @@ Gfx* lvlRender(Gfx* DL)
         DL = viSetupCurrentPlayerView(DL);
         gDPSetScissor(DL++, G_SC_NON_INTERLACE, 0, 0, (s16)viGetX(), (s16)viGetY());
         DL = menu_jump_constructor_handler(DL);
+#ifndef TARGET_N64
+        /* The cl_audio_pump block, in the menus too. It used to be drawn only
+         * from maybe_mp_interface, which the front end never reaches, so
+         * `cl_audio_pump 1` showed nothing until a stage had loaded. Last in the
+         * frame, as in a level, so no menu panel can cover it. */
+        DL = portDrawAudioPumpOverlay(DL);
+#endif
     }
     else
     {
@@ -1551,6 +1570,22 @@ void lvlTick(void)
 #undef PORT_TICK_DELTAF
 
     g_GlobalTimer += g_ClockTimer;
+#ifndef TARGET_N64
+    /* The stat pass's f/s counter: the fields the SIMULATION was actually
+     * credited with. Advanced HERE, not in updateFrameCounters, because
+     * g_ClockTimer is the number lvlTick decided to apply - it is zeroed by the
+     * pause and controls-lock checks above, and those fields really are
+     * discarded. Counting where they are produced instead made f/s read a
+     * healthy 60.0 during every pause. This way g_PortFieldsTicked and
+     * g_GlobalTimer are the same sum by construction.
+     * Relaxed atomic: the stat pass and the hitch log read it from the render
+     * thread when render_thread=1. */
+    if (g_ClockTimer > 0)
+    {
+        extern u32 g_PortFieldsTicked;
+        __atomic_fetch_add(&g_PortFieldsTicked, (u32) g_ClockTimer, __ATOMIC_RELAXED);
+    }
+#endif
 
     if ((g_CurrentStageToLoad != LEVELID_TITLE) && (D_80048394 == 0) && (g_ClockTimer > 0))
     {

@@ -79,7 +79,7 @@ u8 _bssSegmentEnd[0x800000];
  * osPiRawStartDma branch that would use _alt_start* can never be taken.
  */
 __asm__(
-    "    .section .bss\n"
+    ASM_BSS
     "    .balign 16\n"
     "    .globl " ASM_SYM("_codeSegmentRomStart") "\n"
     ASM_SYM("_codeSegmentRomStart") ":\n"
@@ -109,7 +109,7 @@ u8 _alt_startSegmentStart[16];    /* DMA dest of the never-taken branch */
  * Offsets: 0x000, then 0x078 + n*0xA8 (matches map:6617-6633).
  */
 __asm__(
-    "    .section .bss\n"
+    ASM_BSS
     "    .balign 16\n"
     "    .globl " ASM_SYM("_GlobalimagetableSegmentStart") "\n"
     ASM_SYM("_GlobalimagetableSegmentStart") ":\n"
@@ -121,7 +121,7 @@ __asm__(
 );
 
 __asm__(
-    "    .section .data\n"
+    ASM_DATA
     "    .balign 16\n"
     "    .globl " ASM_SYM("_GlobalimagetableSegmentRomStart") "\n"
     ASM_SYM("_GlobalimagetableSegmentRomStart") ":\n"
@@ -152,7 +152,7 @@ __asm__(
  * (phase2-decisions.md D9) replaces this path with real data.
  */
 __asm__(
-    "    .section .bss\n"
+    ASM_BSS
     "    .balign 16\n"
     "    .globl " ASM_SYM("_animation_dataSegmentStart") "\n"
     ASM_SYM("_animation_dataSegmentStart") ":\n"
@@ -178,7 +178,7 @@ u8 _animation_entriesSegmentRomStart[0x169EC0];
  * RDP-only (never software-parsed), zeros are fine.
  */
 __asm__(
-    "    .section .bss\n"
+    ASM_BSS
     "    .balign 16\n"
     "    .globl " ASM_SYM("_fontbankgothicSegmentStart") "\n"
     ASM_SYM("_fontbankgothicSegmentStart") ":\n"
@@ -386,7 +386,7 @@ void portFontBuildSegments(void)
  * absolute D_02004xxx symbols. Zeros -> black logo, no crash.
  */
 __asm__(
-    "    .section .bss\n"
+    ASM_BSS
     "    .balign 16\n"
     "    .globl " ASM_SYM("_rarewarelogoSegmentStart") "\n"
     ASM_SYM("_rarewarelogoSegmentStart") ":\n"
@@ -501,7 +501,7 @@ u8 _efontchardataSegmentRomStart[0x1A80];
  */
 #ifdef GE_ROMDATA_FALLBACK
 __asm__(
-    "    .section .data\n"
+    ASM_DATA
     "    .balign 16\n"
     "    .globl " ASM_SYM("port_imagesBlob") "\n"
     ASM_SYM("port_imagesBlob") ":\n"
@@ -558,7 +558,7 @@ u8 *port_imagesSegmentRomStart; /* romdata fills it, or the build refuses to run
  */
 #ifdef GE_ROMDATA_FALLBACK
 __asm__(
-    "    .section .data\n"
+    ASM_DATA
     "    .balign 16\n"
     "    .globl " ASM_SYM("port_sfxctlBlob") "\n"
     ASM_SYM("port_sfxctlBlob") ":\n"

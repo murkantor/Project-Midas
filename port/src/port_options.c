@@ -26,6 +26,8 @@
 #include <stdlib.h> /* atexit: portOptSaveHold's quit-time flush */
 #include <string.h>
 #include <ultra64.h>
+#include "classic_mode.h"   /* the forced-values rule, as a pure function */
+#include "port_options.h"
 
 /* strong on the owning side, weak no-op in libultra_shim.c */
 extern s32 portVideoOptionGet(const char *key, s32 *out);
@@ -194,10 +196,16 @@ static const struct PortOpt sOpts[] = {
     TOGGLE("high_lod",      "[display]", "High Detail\n",     PORTOPT_CAT_DISPLAY),
     ENUMR ("low_res",       "[display]", "3D Resolution\n",   PORTOPT_CAT_DISPLAY, sLowResVals, sLowResText, NULL),
     TOGGLE("mipmaps",       "[display]", "Mipmaps\n",         PORTOPT_CAT_DISPLAY),
-    /* Shown as "Classic Mode" in the menus (ini key n64_aa). The VIDEO sheet also applies the
-     * other classic settings (front.c portSheetClassicPreset), but on the
-     * console this sets the AA alone. */
-    TOGGLE("n64_aa",        "[display]", "Classic Mode\n",    PORTOPT_CAT_DISPLAY),
+    /* The Classic Mode PRESET, and the row every "is the mode on" question
+     * reads. Below it sit the settings it forces, which the menus lock while it
+     * is on; a row it does not own goes above it. */
+    TOGGLE("classic_mode",  "[display]", "Classic Mode\n",    PORTOPT_CAT_DISPLAY),
+    /* The VI AA bit alone: N64-style edge blending WITHOUT the 240p preset. Its
+     * own setting since the Phase 3 split - before this the key meant both, so
+     * "N64 edges without the preset" was not expressible. classic_n64aa (below)
+     * is the only row that couples them: whether the preset sets this bit when
+     * it turns on. */
+    TOGGLE("n64_aa",        "[display]", "N64 AA\n",          PORTOPT_CAT_DISPLAY),
     /* which parts Classic Mode applies (the CLASSIC sheet); video.c holds them.
      * The first seven follow sClassicKeys below. */
     TOGGLE("classic_res",      "[display]", "3D Resolution\n",  PORTOPT_CAT_DISPLAY),
@@ -357,12 +365,54 @@ static s32 optGet(const char *key, s32 *out)
 }
 
 static void classicPartChanged(const char *key, s32 on);   /* "classic mode" below */
+static void classicApplyMode(s32 on);                     /* below */
+static void classicSyncAaBit(s32 on);                     /* below */
+/* the plan adapter, defined after the mode itself ("the rule, applied") */
+static void classicInputFill(ClassicInput *in, s32 parts[CLASSIC_MODE_MAX],
+                            s32 classic[CLASSIC_MODE_MAX], s32 current[CLASSIC_MODE_MAX],
+                            s32 saved[CLASSIC_MODE_MAX]);
+static void classicPlanApply(const ClassicPlan *p);
 
+/* 1 while a surface is landing a batch of its own and will handle the mode
+ * itself: the VIDEO sheet's Apply Changes, and Reset All. Mirrors sSaveHold, and
+ * exists for the same reason - so the shared choke point can be told to stand
+ * down without knowing which caller it is. */
+static s32 sClassicHold;
+
+void portClassicSetHold(s32 on)
+{
+    sClassicHold = on;
+}
+
+/**
+ * THE choke point: every table write passes here, so this is the one place that
+ * has to know classic_mode carries a mode with it. Before this, four surfaces
+ * applied the preset and three did not, each having learned it separately.
+ *
+ * The key is `classic_mode`, and only that key: `n64_aa` is now the AA bit and
+ * must NOT force anything, or a player asking for N64 edges would get the whole
+ * preset - the conflation the split exists to end.
+ *
+ * Only on a REAL change: re-entering would remember the current values over
+ * classic_saved and the player's originals would be gone.
+ */
 static s32 optSet(const char *key, s32 v)
 {
+    const s32 transitions = (sClassicHold == 0) && (strcmp(key, "classic_mode") == 0);
+    s32 was = 0;
+
+    if (transitions)
+    {
+        optGet(key, &was);
+    }
     if (portVideoOptionSet(key, v) || portInputOptionSet(key, v) || portJoyPortOptionSet(key, v))
     {
         classicPartChanged(key, v != 0);
+        if (transitions && (v != 0) != (was != 0))
+        {
+            classicSyncAaBit(v != 0);
+            classicApplyMode(v != 0);
+        }
         return 1;
     }
     return 0;
@@ -1347,11 +1397,16 @@ void portOptCaptureDefaults(void)
 /** Puts every row back to its default, live, in one ini write. */
 void portOptResetDefaults(void)
 {
-    const s32 classic = portOptFind("n64_aa");
+    const s32 classic = portOptFind("classic_mode");
     s32 i;
 
-    /* Classic Mode first and raw (not portClassicSetLive), so its remembered
-     * values can't come back over the defaults set below. */
+    /* Held: every row goes to its code default below, including classic_mode's,
+     * so the preset must not force its own values in the middle of that. Before
+     * the choke point existed this needed no flag - optSet did not transition -
+     * and the comment below explains the ordering it relied on instead. */
+    portClassicSetHold(1);
+    /* Classic Mode first and raw, so its remembered values can't come back over
+     * the defaults set below. */
     if (classic >= 0 && sOptDefaultHave[classic])
     {
         optSet(sOpts[classic].key, sOptDefault[classic]);
@@ -1363,6 +1418,7 @@ void portOptResetDefaults(void)
             optSet(sOpts[i].key, sOptDefault[i]);
         }
     }
+    portClassicSetHold(0);
     portOptSave();
 }
 
@@ -1457,7 +1513,7 @@ static void classicPartChanged(const char *key, s32 on)
     s32 v[PORTCLASSIC_COUNT];
     s32 n = 0;
     s32 p, i;
-    s32 aa;
+    s32 mode;
 
     for (p = 0; p < PORTCLASSIC_COUNT; p++)
     {
@@ -1466,8 +1522,8 @@ static void classicPartChanged(const char *key, s32 on)
             break;
         }
     }
-    aa = portOptFind("n64_aa");
-    if (p >= PORTCLASSIC_COUNT || aa < 0 || portOptGet(aa) == 0
+    mode = portOptFind("classic_mode");
+    if (p >= PORTCLASSIC_COUNT || mode < 0 || portOptGet(mode) == 0
         || portVideoClassicSavedGet == NULL || portVideoClassicSavedSet == NULL)
     {
         return;
@@ -1490,70 +1546,206 @@ static void classicPartChanged(const char *key, s32 on)
 }
 
 /**
- * The watch's classic mode row changed: turning on saves the current values
- * (classic_saved) and forces the classic ones, turning off restores whatever
- * was saved (4 or 7 fields depending on ini age); all in one ini write.
+ * Apply the mode: remember and force (on) or give back (off), as ONE plan.
+ *
+ * This replaced two hand-rolled loops (this and classicApplyMode's predecessor)
+ * that had to agree about snapshotting, about a part switched off, and about an
+ * older four-field classic_saved. They were the same rule written twice; now the
+ * rule is portClassicPlan and this is only the adapter. Called by the choke point
+ * in optSet, and by nothing else - a surface that wants the mode changes
+ * classic_mode, and the choke point does the rest.
  */
-void portClassicSetLive(s32 on)
+static void classicApplyMode(s32 on)
 {
-    /* video.c; absent headless, where there is no ini to remember them in */
-    extern s32  portVideoClassicSavedGet(s32 *v) __attribute__((weak));
-    extern void portVideoClassicSavedSet(const s32 *v) __attribute__((weak));
-    s32 v[PORTCLASSIC_COUNT];
-    s32 n = 0;
-    s32 i;
+    s32 parts[CLASSIC_MODE_MAX], classic[CLASSIC_MODE_MAX], current[CLASSIC_MODE_MAX];
+    s32 saved[CLASSIC_MODE_MAX];
+    ClassicInput in;
+    ClassicPlan plan;
 
-    if (on)
-    {
-        for (i = 0; i < PORTCLASSIC_COUNT; i++)
-        {
-            v[i] = portOptGet(portOptFind(sClassicKeys[i]));
-        }
-        if (portVideoClassicSavedSet != NULL)
-        {
-            portVideoClassicSavedSet(v);
-        }
-        for (i = 0; i < PORTCLASSIC_COUNT; i++)
-        {
-            if (portClassicPartOn(i))   /* a part switched off on the CLASSIC sheet stays the player's */
-            {
-                portOptSetValueQuiet(portOptFind(sClassicKeys[i]), sClassicVals[i]);
-            }
-        }
-    }
-    else
-    {
-        if (portVideoClassicSavedGet != NULL)
-        {
-            n = portVideoClassicSavedGet(v);
-        }
-        for (i = 0; i < n && i < PORTCLASSIC_COUNT; i++)
-        {
-            if (portClassicPartOn(i))   /* only what Classic Mode forced goes back */
-            {
-                portOptSetValueQuiet(portOptFind(sClassicKeys[i]), v[i]);
-            }
-        }
-    }
-    portOptSave();
+    classicInputFill(&in, parts, classic, current, saved);
+    in.op = on ? CLASSIC_OP_TOGGLE_ON : CLASSIC_OP_TOGGLE_OFF;
+    in.mode_on = on ? 1 : 0;
+    portClassicPlan(&in, &plan);
+    classicPlanApply(&plan);
 }
 
 /**
- * The classic_toggle key (default Tab): flips classic mode in play exactly as
- * the watch's Classic Mode row does, with no on-screen message.
+ * The classic_toggle key (default Tab): flips classic mode in play.
+ *
+ * One set, and nothing else: optSet sees classic_mode change and applies the
+ * mode (and the AA bit with it). The explicit portClassicSetLive call that used
+ * to follow this is what made a second entry point - and, once the choke point
+ * existed, a double apply that would have re-snapshotted the player's values.
+ *
+ * portClassicSetLive itself is gone for that reason. It was the public "apply
+ * the mode" call that three surfaces each made for themselves; keeping it
+ * exported would invite the fourth.
  */
 void portClassicToggle(void)
 {
-    const s32 opt = portOptFind("n64_aa");
-    s32 now;
+    const s32 opt = portOptFind("classic_mode");
 
     if (opt < 0)
     {
         return;
     }
-    now = portOptGet(opt) == 0;
-    if (portOptSetValue(opt, now))
+    portOptSetValue(opt, portOptGet(opt) == 0);
+}
+
+/* ---- the link between the two keys ---------------------------------------
+ *
+ * classic_mode (the preset) and n64_aa (the AA bit) are separate settings, and
+ * exactly ONE thing couples them: the preset's classic_n64aa part. This is the
+ * whole of that coupling, and it is deliberately one-directional.
+ *
+ *   preset on  -> the bit is set, if the part is on
+ *   preset off -> the bit is cleared, if the part is on
+ *   bit set    -> NOTHING happens to the preset
+ *
+ * The part gates BOTH directions, because it is one ownership claim: a preset
+ * that is not allowed to touch the bit must not set it on entry nor clear it on
+ * exit, or a player who wants N64 edges with the preset's other parts would
+ * lose the bit every time they left the mode. The consequence, stated rather
+ * than discovered: turning classic_n64aa OFF while the mode is on leaves the
+ * bit exactly as the player last set it, and leaving the mode then leaves it
+ * there too - the menu shows the bit, so it is not a hidden state.
+ *
+ * The other asymmetry is the point of the Phase 3 split: `n64_aa=1
+ * classic_mode=0` (N64 edges, no 240p, no forced values) is a state a player
+ * can ask for, and it would be unreachable if the bit carried the preset with
+ * it - which is exactly what the single key did before.
+ *
+ * Quiet, because the transition it belongs to saves once at the end: a second
+ * save here would rewrite midas.ini twice for one keypress.
+ */
+static void classicSyncAaBit(s32 on)
+{
+    extern s32 portClassicSetsN64Aa(void);   /* video.c; 1 headless (the fake) */
+    const s32 aa = portOptFind("n64_aa");
+
+    if (aa < 0 || !portClassicSetsN64Aa())
     {
-        portClassicSetLive(now);
+        return;   /* no row, or the part is off: this preset does not own the bit */
     }
+    portOptSetValueQuiet(aa, on ? 1 : 0);
+}
+
+/* ---- the rule, applied ---------------------------------------------------
+ *
+ * port/src/classic_mode.c holds the rule itself (what is remembered, what is
+ * forced, what is given back) as pure functions with a test. Everything below
+ * is the adapter: it reads the live tables into a ClassicInput and writes a
+ * ClassicPlan back out. Kept here because this file owns the two tables the
+ * rule needs - sClassicKeys/sClassicVals and the CLASSIC sheet's part rows.
+ */
+
+/** Live state into `in`, for op/mode_on supplied by the caller. */
+static void classicInputFill(ClassicInput *in, s32 parts[CLASSIC_MODE_MAX],
+                             s32 classic[CLASSIC_MODE_MAX], s32 current[CLASSIC_MODE_MAX],
+                             s32 saved[CLASSIC_MODE_MAX])
+{
+    extern s32  portVideoClassicSavedGet(s32 *v) __attribute__((weak));
+    const s32 mode = portOptFind("classic_mode");
+    s32 i;
+
+    for (i = 0; i < PORTCLASSIC_COUNT; i++)
+    {
+        parts[i] = portClassicPartOn(i);
+        classic[i] = sClassicVals[i];
+        current[i] = portOptGet(portOptFind(sClassicKeys[i]));
+    }
+    in->mode_on = (mode >= 0) ? (portOptGet(mode) != 0) : 0;
+    in->parts_on = parts;
+    in->classic = classic;
+    in->current = current;
+    in->saved_n = (portVideoClassicSavedGet != NULL) ? portVideoClassicSavedGet(saved) : 0;
+    in->saved = saved;
+    in->n = PORTCLASSIC_COUNT;
+}
+
+/** Land a plan: the snapshot first (it records what the writes overwrite), then
+ * the writes in the plan's order. One ini write, as portClassicSetLive does. */
+/* Land a plan WITHOUT saving. The caller saves once, at the end of its own
+ * operation: portOptSetValue / portOptSetIni / portOptStep / portOptSetIndex all
+ * do, which is what makes "one change, one save" true from every setter. This
+ * used to save here, so a text set through portOptSetIni saved twice - same
+ * values, twice the disk churn, and no test could see it until one counted. */
+static void classicPlanApply(const ClassicPlan *p)
+{
+    extern void portVideoClassicSavedSet(const s32 *v) __attribute__((weak));
+    s32 i;
+
+    /* The snapshot goes first: it records the values the writes below overwrite.
+     * video.c writes classic_saved to midas.ini itself. */
+    if (p->snapshot && portVideoClassicSavedSet != NULL)
+    {
+        portVideoClassicSavedSet(p->saved);
+    }
+    for (i = 0; i < p->write_n; i++)
+    {
+        portOptSetValueQuiet(portOptFind(sClassicKeys[p->write_idx[i]]), p->write_val[i]);
+    }
+}
+
+/** How many of Classic Mode's parts are live but not at the classic value.
+ *
+ * Fills idx[0..returned) with the part indices so a caller can name them.
+ * 0 when the mode is consistent OR off: nothing is forced then, so nothing can
+ * be wrong. This is the check the boot report and `cl_classic` print.
+ */
+s32 portClassicMismatchParts(s32 *idx, s32 max)
+{
+    s32 parts[CLASSIC_MODE_MAX], classic[CLASSIC_MODE_MAX], current[CLASSIC_MODE_MAX];
+    s32 saved[CLASSIC_MODE_MAX];
+    s32 found[CLASSIC_MODE_MAX];
+    ClassicInput in;
+    s32 n;
+    s32 i;
+
+    classicInputFill(&in, parts, classic, current, saved);
+    if (!in.mode_on)
+    {
+        return 0;
+    }
+    /* Count into our own buffer, then copy only what the caller has room for.
+     * The count returned is the TRUE count, so a caller with a short buffer still
+     * learns that six settings disagree even if it can only name two - and,
+     * more to the point, nothing writes past `max`. This used to ignore `max`
+     * and fill the caller's array with up to CLASSIC_MODE_MAX entries. */
+    n = portClassicMismatch(in.parts_on, in.classic, in.current, in.n, found);
+    if (idx != NULL)
+    {
+        const s32 room = (max < n) ? max : n;
+
+        for (i = 0; i < room; i++)
+        {
+            idx[i] = found[i];
+        }
+    }
+    return n;
+}
+
+/**
+ * Repair in place: force what the mode should own, restore what it should have
+ * given back, and remember nothing. This is CLASSIC_OP_FIX - see classic_mode.h
+ * for why a repair must never re-snapshot.
+ *
+ * Returns the number of values written (0 = already consistent).
+ */
+s32 portClassicRepair(void)
+{
+    s32 parts[CLASSIC_MODE_MAX], classic[CLASSIC_MODE_MAX], current[CLASSIC_MODE_MAX];
+    s32 saved[CLASSIC_MODE_MAX];
+    ClassicInput in;
+    ClassicPlan plan;
+
+    classicInputFill(&in, parts, classic, current, saved);
+    in.op = CLASSIC_OP_FIX;
+    portClassicPlan(&in, &plan);
+    classicPlanApply(&plan);
+    if (plan.snapshot || plan.write_n > 0)
+    {
+        portOptSave();   /* the applier does not save; this verb is its own caller */
+    }
+    return plan.write_n;
 }

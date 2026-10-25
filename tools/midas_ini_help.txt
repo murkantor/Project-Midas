@@ -119,12 +119,39 @@ padN_stickmode.
   pause_pillars       | 1          | Black side bars ease in while the watch
                       |            | is open (wide windows only)
   Frame rate
-  maxfps              | 120        | Frame rate cap. 0 = no cap, -1 = N64
-                      |            | pacing. Only lowers the rate; one game
-                      |            | tick runs per frame, so this also sets
-                      |            | the tick rate
-  tickhz              | (derived)  | Worked out from maxfps and rewritten by
-                      |            | the game. Do not edit; change maxfps
+  maxfps              | 120        | Frame rate cap. 0 = no frame cap. The
+                      |            | tick is uncapped too in practice, via
+                      |            | a 1000 Hz ceiling rather than no gate
+                      |            | (a zero gate left the loop unbounded).
+                      |            | A positive number also sets the tick
+                      |            | rate, never below 60: maxfps 30 asks
+                      |            | for a 60 Hz sim. The frame cap still
+                      |            | holds drawing to 30, and the loop runs
+                      |            | a tick per present - so tk reads 30,
+                      |            | each tick carrying two fields and f/s
+                      |            | still 60.0. Game time is right; only
+                      |            | the step rate followed the display.
+                      |            | -1 = the N64's pacing. Each frame is
+                      |            | held for the fields the console needed,
+                      |            | so frame rate and tick rate fall together
+                      |            | where the console slowed. GAME TIME still
+                      |            | advances at 60 fields a second - that is
+                      |            | the point, and f/s 60.0 is what shows it.
+                      |            | A stage load is held for the console's
+                      |            | load time too (about 9 s to enter Dam,
+                      |            | with nothing drawn meanwhile)
+  tickhz              | (derived)  | Do not edit this one; Max FPS decides
+                      |            | the tick rate. The game rewrites the
+                      |            | line to match what is running: a
+                      |            | numeric value follows maxfps (1..59
+                      |            | derive 60, 60 and up derive that
+                      |            | number, 0 leaves both uncapped), and
+                      |            | maxfps=-1 writes hw for the N64's
+                      |            | pacing. A number left behind by an
+                      |            | older build is corrected to hw on the
+                      |            | next launch, so the line always names
+                      |            | the mode that ran. Set Max FPS to
+                      |            | change the rate
   vsync               | 1          | 0 = never wait for vblank (tearing)
   render_thread       | -1         | Draw on its own thread. -1 = auto,
                       |            | 0 = off, 1 = on
@@ -140,10 +167,24 @@ padN_stickmode.
                       |            | to the window: 0 = window size,
                       |            | 240 = the N64's, or 480, 720, 1080.
                       |            | Frontend menus stay at window size
-  n64_aa              | 0          | 1 = N64-style edge anti-aliasing. Uses
-                      |            | MSAA (at least 4x); best with low_res=240.
-                      |            | Classic Mode: in solo play black side
-                      |            | pillars ease in for a 4:3 picture
+  classic_mode        | 0          | 1 = Classic Mode is on. The PRESET: it
+                      |            | remembers seven settings, forces its own
+                      |            | values (240 lines, 3-point filter, 8x
+                      |            | anisotropy, hardware pacing, 2x MSAA,
+                      |            | mipmaps, 2D filtering) and turns on the
+                      |            | 4:3 pillars, the load hitches and the
+                      |            | composite filter. Tab toggles it. This is
+                      |            | the key every "is Classic Mode on"
+                      |            | question reads. Files written before the
+                      |            | split are migrated once: n64_aa=1 becomes
+                      |            | classic_mode=1 n64_aa=1
+  n64_aa              | 0          | 1 = N64-style edge anti-aliasing, on its
+                      |            | own. Uses MSAA (at least 2x, 4x under
+                      |            | Classic Mode); best with low_res=240.
+                      |            | Separate from Classic Mode: set this and
+                      |            | nothing else changes. classic_n64aa below
+                      |            | is what decides whether turning Classic
+                      |            | Mode on sets it for you
   classic_res         | 1          | Classic Mode parts (CLASSIC tab on the
   classic_filter      | 1          | Video page): 1 = Classic Mode applies
   classic_aniso       | 1          | that part, 0 = it leaves your own
@@ -154,7 +195,11 @@ padN_stickmode.
   classic_pillars     | 1          | need hardware pacing), the composite
   classic_hitches     | 1          | video filter and N64 AA (the VI edge
   classic_composite   | 1          | blend; off = plain MSAA edges, the
-  classic_n64aa       | 1          | other parts stay)
+  classic_n64aa       | 1          | other parts stay). classic_n64aa is the
+                      |            | ONLY link between classic_mode and
+                      |            | n64_aa: on, the preset sets the AA bit
+                      |            | when it turns on and clears it when it
+                      |            | turns off; off, it leaves your bit alone
   room_cache          | 2          | 2 = keep room geometry on the GPU
                       |            | (faster), 0 = classic path. Forced off
                       |            | with maxfps=-1

@@ -24,4 +24,8 @@ void langLoadToBank(int id, u8 *target, int size);
 LEVELID langGetLangBankIndexFromStagenum(LEVELID level);
 struct jpncharpixels *langGetJpnCharPixels(s32 codepoint);
 
+
+void langClearBank(s32 textBank);
+void langInit(void);
+
 #endif

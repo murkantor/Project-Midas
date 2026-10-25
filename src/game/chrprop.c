@@ -1,4 +1,6 @@
 #include <ultra64.h>
+#include "game/bondview.h"
+#include "game/lightfixture.h"
 #include <assert.h>
 #include <bondgame.h>
 #include <bondtypes.h>
@@ -1313,7 +1315,7 @@ void chraiDefaultWeaponFireHandler(s32 hand)
  * Hitscans gather candidate hits along the bullet path. This function records each candidate hit into shotdata
  * and enforces pentration limits and removes hits that should be blocked by closer objects.
  */
-void chrpropAddBulletHit(struct ShotData *shotdata, PropRecord *prop, f32 dist, s32 hitpart, ModelNode *node, struct HitThing *hitthing, s32 room, s32 unk44, Model *model, bool countsAsPenetration, s32 blocksFurtherHits)
+void chrpropAddBulletHit(struct ShotData *shotdata, PropRecord *prop, f32 dist, s32 hitpart, ModelNode *node, struct HitThing *hitthing, s32 room, ModelNode *unk44, Model *model, bool countsAsPenetration, s32 blocksFurtherHits)
 {
     s32 pad;
     s32 i;

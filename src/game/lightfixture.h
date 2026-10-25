@@ -20,4 +20,11 @@ void lightFixtureEntryEnd(Gfx *param_1);
 bool check_if_imageID_is_light(s32 imageID);
 void lightFixtureEntryBegin(Gfx *DL);
 
+
+void lightFixtureInitTables(void);
+void clear_light_fixturetable_in_room(s32 room_index);
+void redarken_lights_in_room(s32 room_index);
+void lightFixtureBreak(Gfx * hit_gfx, u32 tri_type, s32 room_index);
+s32 darkened_light_table_contains_vertex(Vtx * vertex, s32 room_index);
+
 #endif
