@@ -32,6 +32,7 @@ static const struct PortOptHelp sHelp[] = {
     { "fast_pause",         "Watch opens and closes at full speed." },
     { "mouse_auto_aim",     "Lets Auto-Aim work with the mouse." },
     { "high_lod",           "Always draws the most detailed models." },
+    { "random_blood",       "Randomize the colour of blood splats when the Paintball Cheat is on" },
     { "setting_help",       "Shows this help box." },
 
     /* HUD */

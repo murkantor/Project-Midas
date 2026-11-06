@@ -4552,6 +4552,7 @@ static const struct PortSheetRow port_sheet_rows_portopts[] = {
     { SHROW_OPT, "fast_pause" },             /* the watch at Rare's top speed, default OFF */
     { SHROW_OPT, "mouse_auto_aim" },         /* off: no Auto-Aim on the mouse, above every other Auto-Aim setting */
     { SHROW_OPT, "high_lod", "High Detail Models\n" },   /* moved from GRAPHICS */
+    { SHROW_OPT, "random_blood" },    /* off: no random blood colours. Needs Paintball Cheat*/
     { SHROW_OPT, "setting_help" },   /* the help box under the folder sheets, default ON */
 };
 static const struct PortSheetRow port_sheet_rows_hud[] = {

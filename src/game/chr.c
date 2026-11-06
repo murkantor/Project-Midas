@@ -3464,6 +3464,269 @@ after_opcode:
 #endif
 }
 
+// port: random blood colours
+#ifndef TARGET_N64
+void chrCreateBloodStainRandom(Model *model, s32 arg1, ModelNode *root, struct coord3d *pos)
+{
+    s32 sp_pos[3];
+    s32 unused_stack_pad[1];
+    s32 bestdist;
+    ModelNode *bestnode;
+    s32 bestindex;
+    ModelNode *node;
+    s32 opcode;
+    ModelRoData_DisplayList_CollisionRecord *rodata;
+    ModelRoData_DisplayList_CollisionRecord *relatedrodata;
+    ModelRwData_DisplayList_CollisionRecord *relatedrwdata;
+    ModelNode *relatednode;
+    ModelNode *rwdata;
+    Vertex *vtx;
+    Vertex *newvertices;
+    s32 i;
+    s32 n;
+    s32 paintval;
+    s32 relatedindex;
+    
+    s32 redval = 0;
+    s32 greenval = 0;
+    s32 blueval = 0;
+    extern s32 portRandomBlood(void);
+    if (portRandomBlood()){
+
+        i = (randomGetNext() & 0xff);
+        if (i <= 31){
+            i = (randomGetNext() & 0xbf);
+            i = (i < 50) ? 50 : i;
+            redval = i;
+            greenval = i;
+            blueval = i;
+        }else
+        {
+            i = (randomGetNext() & 0xff);
+            i = (i < 50) ? 50 : i;
+            redval = i;
+            i = (randomGetNext() & 0xff);
+            i = (i < 50) ? 50 : i;
+            blueval = i;
+            i = (randomGetNext() & 0xff);
+            i = (i < 50) ? 50 : i;
+            greenval = i;
+        }
+    }
+
+    sp_pos[0] = pos->x;
+    sp_pos[1] = pos->y;
+    sp_pos[2] = pos->z;
+
+    bestnode = NULL;
+    bestindex = 0;
+    bestdist = 0x7fffffff;
+    node = root;
+
+    while (node != NULL)
+    {
+        opcode = node->Opcode & 0xff;
+
+        if (opcode == MODELNODE_OPCODE_LOD)
+        {
+            goto apply_distance;
+        }
+
+        if (opcode == MODELNODE_OPCODE_SWITCH)
+        {
+            goto apply_toggle;
+        }
+
+        if (opcode == MODELNODE_OPCODE_HEAD)
+        {
+            goto apply_head;
+        }
+
+        if (opcode != MODELNODE_OPCODE_DLCOLLISION)
+        {
+            goto after_opcode;
+        }
+
+        rodata = &node->Data->DisplayListCollisions;
+        n = 0;
+
+        if (rodata->numCollisionVertices > 0)
+        {
+            vtx = rodata->CollisionVertices;
+
+            do
+            {
+                s32 dx;
+                s32 dy;
+                s32 dz;
+                s32 dist;
+
+                dx = sp_pos[0] - vtx->coord.x;
+                dy = sp_pos[1] - vtx->coord.y;
+                dz = sp_pos[2] - vtx->coord.z;
+                dist = ((((u32) dx) * ((u32) dx)) + (((u32) dy) * ((u32) dy))) + (((u32) dz) * ((u32) dz));
+
+                if (dist < bestdist)
+                {
+                    bestdist = dist;
+                    bestnode = node;
+                    bestindex = n;
+                }
+
+                n++;
+                vtx++;
+            }
+            while (n < rodata->numCollisionVertices);
+        }
+
+        goto after_opcode;
+
+apply_distance:
+        modelApplyDistanceRelations(model, node);
+        goto after_opcode;
+
+apply_toggle:
+        modelApplyToggleRelations(model, node);
+        goto after_opcode;
+
+apply_head:
+        modelApplyHeadRelations(model, node);
+
+after_opcode:
+        if ((node->Child != NULL) && ((node == root) || ((opcode != MODELNODE_OPCODE_BBOX) && (opcode != MODELNODE_OPCODE_OP17))))
+        {
+            node = node->Child;
+        }
+        else
+        {
+            while (node != NULL)
+            {
+                if (node == root)
+                {
+                    node = NULL;
+                    break;
+                }
+
+                if (node->Next != NULL)
+                {
+                    node = node->Next;
+                    break;
+                }
+
+                node = node->Parent;
+            }
+        }
+    }
+
+    if (bestnode == NULL)
+    {
+        return;
+    }
+
+    node = (ModelNode *) bestnode->Data;
+    rwdata = (ModelNode *) modelGetNodeRwData(model, bestnode);
+    relatedrodata = NULL;
+    relatedrwdata = NULL;
+    relatedindex = 0;
+    paintval = (randomGetNext() % 50) + 20;
+
+    if (arg1 == 8)
+    {
+        paintval += 100;
+    }
+
+    if (arg1 == 0x0f)
+    {
+        paintval += 50;
+    }
+
+    relatednode = (ModelNode *) ((ModelRoData_DisplayList_CollisionRecord *) node)->CollisionVertices[bestindex].CollisionRelatedNode;
+
+    if (((ModelRoData_DisplayList_CollisionRecord *) node)->CollisionVertices[bestindex].CollisionRelatedNode != NULL)
+    {
+        relatedrodata = &relatednode->Data->DisplayListCollisions;
+        relatedrwdata = (ModelRwData_DisplayList_CollisionRecord *) modelGetNodeRwData(model, relatednode);
+        relatedindex = ((ModelRoData_DisplayList_CollisionRecord *) node)->CollisionVertices[bestindex].CollisionRelatedIndex;
+    }
+
+    if (((ModelRwData_DisplayList_CollisionRecord *) rwdata)->Vertices == ((ModelRoData_DisplayList_CollisionRecord *) node)->Vertices)
+    {
+        newvertices = (Vertex *) vtxstore_allocate(((ModelRoData_DisplayList_CollisionRecord *) node)->numVertices, 0xcccc, 0, 0);
+
+        if (newvertices != NULL)
+        {
+            s32 j;
+
+            ((ModelRwData_DisplayList_CollisionRecord *) rwdata)->Vertices = newvertices;
+
+            for (j = 0; j < ((ModelRoData_DisplayList_CollisionRecord *) node)->numVertices; j++)
+            {
+                newvertices[j] = ((ModelRoData_DisplayList_CollisionRecord *) node)->Vertices[j];
+            }
+        }
+    }
+
+    if ((relatedrwdata != NULL) && (relatedrwdata->Vertices == relatedrodata->Vertices))
+    {
+        newvertices = (Vertex *) vtxstore_allocate(relatedrodata->numVertices, 0xcccc, 0, 0);
+
+        if (newvertices != NULL)
+        {
+            s32 j;
+
+            relatedrwdata->Vertices = newvertices;
+
+            for (j = 0; j < relatedrodata->numVertices; j++)
+            {
+                newvertices[j] = relatedrodata->Vertices[j];
+            }
+        }
+    }
+
+    if (((ModelRwData_DisplayList_CollisionRecord *) rwdata)->Vertices != ((ModelRoData_DisplayList_CollisionRecord *) node)->Vertices)
+    {
+        s32 index;
+
+        index = ((ModelRoData_DisplayList_CollisionRecord *) node)->CollisionVertices[bestindex].index;
+
+        while (index >= 0)
+        {
+            ((ModelRwData_DisplayList_CollisionRecord *) rwdata)->Vertices[index].a = paintval;
+            if (portRandomBlood()){
+                ((ModelRwData_DisplayList_CollisionRecord *) rwdata)->Vertices[index].r += redval;
+                ((ModelRwData_DisplayList_CollisionRecord *) rwdata)->Vertices[index].g += greenval;
+                ((ModelRwData_DisplayList_CollisionRecord *) rwdata)->Vertices[index].b += blueval;
+            }
+            index = ((ModelRoData_DisplayList_CollisionRecord *) node)->PointUsage[index];
+        }
+    }
+
+    if ((relatedrwdata != NULL) && (relatedrwdata->Vertices != relatedrodata->Vertices))
+    {
+        s32 index;
+
+        index = relatedrodata->CollisionVertices[relatedindex].index;
+
+        while (index >= 0)
+        {
+            relatedrwdata->Vertices[index].a = paintval;
+            if (portRandomBlood()){
+                relatedrwdata->Vertices[index].r = redval;
+                relatedrwdata->Vertices[index].g = greenval;
+                relatedrwdata->Vertices[index].b = blueval;
+            }
+            index = relatedrodata->PointUsage[index];
+        }
+    }
+#ifndef TARGET_N64
+    { /* port: the per-instance vertices were edited in place - any GPU-retained part on them is stale (roc_hooks.c) */
+        extern void portPartCacheVerticesFreed(const void *vtx);
+        portPartCacheVerticesFreed(((ModelRwData_DisplayList_CollisionRecord *) rwdata)->Vertices);
+        if (relatedrwdata != NULL) portPartCacheVerticesFreed(relatedrwdata->Vertices);
+    }
+#endif
+}
+#endif
 
 /**
  *
@@ -3836,8 +4099,16 @@ void chrHandleBulletHit(struct ShotData *shot, struct BulletHit *bhit)
     matrix_4x4_set_inverse_rotation_and_translation(mtx, &invmtx);
     mtx4TransformVecInPlace(&invmtx, &jointpos);
 
-    // Create a blood stain at the impact point.
-    chrCreateBloodStain(bhit->model, bhit->hitpart, bhit->node, &jointpos);
+    // Add paintball check for random blood colours
+    if (!cheatIsActive(CHEAT_PAINTBALL))
+    {
+        // Create a blood stain at the impact point.
+        chrCreateBloodStain(bhit->model, bhit->hitpart, bhit->node, &jointpos);
+    }
+    else{
+        chrCreateBloodStainRandom(bhit->model, bhit->hitpart, bhit->node, &jointpos);
+    }
+
 }
 
 

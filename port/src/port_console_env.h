@@ -305,6 +305,7 @@ static const char *const sPortConEnvNames[] = {
     "GE_XLU_ROOMMEAN",
     "GE_XLU_ROOMUNITS",
     "GE_XLU_ZBIAS",
+    "GE_RANDOMBLOOD"
 };
 
 #endif /* PORT_CONSOLE_ENV_H */

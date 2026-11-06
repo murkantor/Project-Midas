@@ -134,6 +134,7 @@ static const struct PortWatchRowDef sPortOpts[] = {
     { PWROW_OPT,       "fast_pause",         NULL, 0, 0 },   /* the watch at Rare's top speed */
     { PWROW_OPT,       "mouse_auto_aim",     NULL, 0, 0 },   /* the folder's row too */
     { PWROW_OPT,       "high_lod", "High Detail Models\n", 0, 0 },   /* from Graphics */
+    { PWROW_OPT,       "random_blood",        NULL, 0, 0 },       /* randomize blood colours */
     { PWROW_OPT,       "setting_help",       NULL, 0, 0 },   /* the folder's help box; never drawn on the watch */
     { PWROW_BACK,      NULL, "Back\n", 0, 0 },
 };
