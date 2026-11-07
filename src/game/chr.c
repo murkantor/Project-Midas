@@ -3464,7 +3464,7 @@ after_opcode:
 #endif
 }
 
-// port: random blood colours
+// port: random blood colours. 95% of this is a copy of chrCreateBloodStain
 #ifndef TARGET_N64
 void chrCreateBloodStainRandom(Model *model, s32 arg1, ModelNode *root, struct coord3d *pos)
 {
@@ -3692,7 +3692,7 @@ after_opcode:
         while (index >= 0)
         {
             ((ModelRwData_DisplayList_CollisionRecord *) rwdata)->Vertices[index].a = paintval;
-            if (portRandomBlood()){
+            if (portRandomBlood()){ /*randomly color the blood*/
                 ((ModelRwData_DisplayList_CollisionRecord *) rwdata)->Vertices[index].r += redval;
                 ((ModelRwData_DisplayList_CollisionRecord *) rwdata)->Vertices[index].g += greenval;
                 ((ModelRwData_DisplayList_CollisionRecord *) rwdata)->Vertices[index].b += blueval;
@@ -3710,7 +3710,7 @@ after_opcode:
         while (index >= 0)
         {
             relatedrwdata->Vertices[index].a = paintval;
-            if (portRandomBlood()){
+            if (portRandomBlood()){ /*randomly color the blood*/
                 relatedrwdata->Vertices[index].r = redval;
                 relatedrwdata->Vertices[index].g = greenval;
                 relatedrwdata->Vertices[index].b = blueval;
