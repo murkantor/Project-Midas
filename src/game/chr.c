@@ -3495,6 +3495,7 @@ void chrCreateBloodStainRandom(Model *model, s32 arg1, ModelNode *root, struct c
 
         i = (randomGetNext() & 0xff);
         if (i <= 31){
+            /*clamp the colour values so they aren't too dark or too bright*/
             i = (randomGetNext() & 0xbf);
             i = (i < 50) ? 50 : i;
             redval = i;
