@@ -838,10 +838,9 @@ static u64 portHostMicroseconds(void)
     return (u64)((now.QuadPart * 1000000ull) / (u64)freq.QuadPart);
 }
 
-/* BSD string functions: glibc provides these, MinGW does not.
- * Signatures per include/PR/os.h:989 (int length). */
-void bcopy(const void *src, void *dst, int len) { memmove(dst, src, (size_t)len); }
-void bzero(void *dst, int len) { memset(dst, 0, (size_t)len); }
+/* BSD string functions: provided by libc on Unix, implemented here for MinGW. */
+void bcopy(const void *src, void *dst, size_t len) { memmove(dst, src, (size_t)len); }
+void bzero(void *dst, size_t len) { memset(dst, 0, (size_t)len); }
 #else
 static u64 portHostMicroseconds(void)
 {
@@ -1033,7 +1032,7 @@ s32 osSetTimer(OSTimer *timer, OSTime countdown, OSTime interval, OSMesgQueue *m
  * The real PI manager posts (OSMesg)mb to mq on completion; ramrom.c:44 and
  * audi.c:782 recv exactly one message per started DMA, so post it here.
  */
-s32 osPiStartDma(OSIoMesg *mb, s32 pri, s32 direction, u32 devAddr, void *vAddr, u32 nbytes, OSMesgQueue *mq)
+s32 osPiStartDma(OSIoMesg *mb, s32 pri, s32 direction, uintptr_t devAddr, void *vAddr, u32 nbytes, OSMesgQueue *mq)
 {
     (void)pri;
 
@@ -1059,7 +1058,7 @@ s32 osPiStartDma(OSIoMesg *mb, s32 pri, s32 direction, u32 devAddr, void *vAddr,
  * Raw variant: same memcpy, no completion message (the real one posts
  * nothing either — callers poll osPiGetStatus, which reports idle).
  */
-s32 osPiRawStartDma(s32 direction, u32 devAddr, void *dramAddr, u32 size)
+s32 osPiRawStartDma(s32 direction, uintptr_t devAddr, void *dramAddr, u32 size)
 {
     if (direction == OS_READ) {
         memcpy(dramAddr, (const void *)devAddr, size);
@@ -1100,9 +1099,9 @@ void osCreatePiManager(OSPri pri, OSMesgQueue *cmdQ, OSMesg *cmdBuf, s32 cmdMsgC
 }
 
 /** No TLB, no KSEG0: virtual == physical (65 call sites, hottest os symbol). */
-u32 osVirtualToPhysical(void *addr)
+uintptr_t osVirtualToPhysical(void *addr)
 {
-    return (u32)addr;
+    return (uintptr_t)addr;
 }
 
 /* ==== VI ================================================================= */

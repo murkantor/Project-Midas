@@ -276,4 +276,5 @@ build_deck/
 docs/devnotes/
 
 # the docs live in the private repo
-/docs/
+/docs/*
+!/docs/macos.md

@@ -1,4 +1,6 @@
 #include <ultra64.h>
+#include "game/bg.h"
+#include "game/dyn.h"
 #ifndef TARGET_N64
 #include <stdio.h>  /* get_ptr_item_statistics out-of-range report */
 #include <string.h> /* memset - full-Model stack instances */
@@ -1021,16 +1023,16 @@ void portGunTexAudit(void)
             /* texLoad replaced TextureID with the pool data pointer; the
              * pool allocation writes the texture number 8 bytes before the
              * data (texLoad's left-side header), so it is recoverable. */
-            u32 id = h.Textures[t].TextureID;
+            uintptr_t id = h.Textures[t].TextureID;
             s32 texnum = (id >= (u32)MAX_TEXTURES) ? *(s16 *)((u8 *)id - 8) : (s32)id;
             extern struct texpool *portModelTexPool(void);
             struct tex *rec = texFindInPool(texnum, portModelTexPool());
 
-            fprintf(stderr, "gunaudit:   tex[%02d] id=%4d %ux%u tiles=%u depth=%u -> %08x%s",
+            fprintf(stderr, "gunaudit:   tex[%02d] id=%4d %ux%u tiles=%u depth=%u -> %zx%s",
                     t, texnum,
                     h.Textures[t].Width, h.Textures[t].Height,
                     h.Textures[t].MipMapTiles,
-                    h.Textures[t].RenderDepth, id,
+                    h.Textures[t].RenderDepth, (size_t)id,
                     (id < (u32)MAX_TEXTURES) ? "  UNCONVERTED" : "");
 
             if (rec != NULL)

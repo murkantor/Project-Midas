@@ -1,4 +1,5 @@
 #include <ultra64.h>
+#include "game/bondview_r.h"
 #include <bondconstants.h>
 #include <memp.h>
 #include "chr.h"

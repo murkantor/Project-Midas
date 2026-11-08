@@ -8,4 +8,8 @@ void speedgraphMarkerHandler(s32 arg0);
 Gfx *speedgraphDisplayMetrics(Gfx *gdl);
 void speedgraphRenderGraph(void);
 
+
+void speedgraphInit(void);
+void speedgraphMarkerUpdate(void);
+
 #endif

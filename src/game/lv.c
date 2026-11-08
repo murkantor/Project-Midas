@@ -1,4 +1,9 @@
 #include <ultra64.h>
+#include "game/cleanup_alarms.h"
+#include "game/initactorpropstuff.h"
+#include "game/music_0D2720.h"
+#include "game/objective_status.h"
+#include "game/sky.h"
 #include <math.h>
 #include <os_extension.h>
 #include <PR/libaudio.h>
@@ -216,6 +221,12 @@ s32 g_DebugPortalsInputBuffer2 = 0;
 s32 g_DebugPortalsInputBuffer3 = 0;
 s32 g_DebugPortalsInputBuffer4 = 0;
 
+#ifdef __APPLE__
+#define g_DebugPortalsInputBufferSource1 g_DebugPortalsInputBuffer1
+#define g_DebugPortalsInputBufferSource2 g_DebugPortalsInputBuffer2
+#define g_DebugPortalsInputBufferSource3 g_DebugPortalsInputBuffer3
+#define g_DebugPortalsInputBufferSource4 g_DebugPortalsInputBuffer4
+#else
 extern s32 g_DebugPortalsInputBufferSource1;
 extern s32 g_DebugPortalsInputBufferSource2;
 extern s32 g_DebugPortalsInputBufferSource3;
@@ -225,6 +236,7 @@ extern s32 g_DebugPortalsInputBufferSource4;
 #pragma weak g_DebugPortalsInputBufferSource2 = g_DebugPortalsInputBuffer2
 #pragma weak g_DebugPortalsInputBufferSource3 = g_DebugPortalsInputBuffer3
 #pragma weak g_DebugPortalsInputBufferSource4 = g_DebugPortalsInputBuffer4
+#endif
 
 /**
  * Something debug related in the MP manage method.
@@ -262,7 +274,7 @@ void lvInit(void)
     s32 size;
 
     debTryAdd(&lvl_c_debug_notice_list, "lv_c_debug");
-    size = (s32)&_fontdlSegmentRomEnd - (s32)&_fontdlSegmentRomStart;
+    size = (intptr_t)&_fontdlSegmentRomEnd - (intptr_t)&_fontdlSegmentRomStart;
     lvl_c_debug_notice_list = 1;
     ptr_font_DL = mempAllocBytesInBank(size, MEMPOOL_PERMANENT);
     romCopy(ptr_font_DL, &_fontdlSegmentRomStart, size);

@@ -28,6 +28,27 @@
  * plus a silent copy in the tilde console ring (spec section 7). */
 extern void portConLogf(const char *fmt, ...);
 
+#ifndef _WIN32
+static int portSleepUntil(const struct timespec *target)
+{
+#ifdef __APPLE__
+    struct timespec now, delay;
+    clock_gettime(CLOCK_MONOTONIC, &now);
+    delay.tv_sec = target->tv_sec - now.tv_sec;
+    delay.tv_nsec = target->tv_nsec - now.tv_nsec;
+    if (delay.tv_nsec < 0) {
+        delay.tv_sec--;
+        delay.tv_nsec += 1000000000L;
+    }
+    if (delay.tv_sec < 0) return 0;
+    /* os.h reserves errno as an N64 controller field. */
+    return nanosleep(&delay, NULL) == 0 ? 0 : *__error();
+#else
+    return clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, target, NULL);
+#endif
+}
+#endif
+
 /**
  * Allocate zeroed memory guaranteed to sit ABOVE 0x10000000.
  *
@@ -877,7 +898,7 @@ void portPumpEvents(void)
                 }
                 if (remain <= 2000000LL)
                 {
-                    while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &s_PaceTarget, NULL) == EINTR)
+                    while (portSleepUntil(&s_PaceTarget) == EINTR)
                     {
                     }
                     break;
@@ -886,7 +907,7 @@ void portPumpEvents(void)
         }
         else
         {
-            while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &s_PaceTarget, NULL) == EINTR)
+            while (portSleepUntil(&s_PaceTarget) == EINTR)
             {
                 /* interrupted by a signal: retry to the same absolute target */
             }

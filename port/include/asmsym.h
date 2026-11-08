@@ -20,6 +20,14 @@
 #define PORT_ASMSYM_STR_(x) #x
 #define PORT_ASMSYM_STR(x) PORT_ASMSYM_STR_(x)
 
+#ifdef __APPLE__
+#define ASM_BSS ".section __DATA,__bss,zerofill\n"
+#define ASM_DATA ".section __DATA,__data\n"
+#else
+#define ASM_BSS ".section .bss\n"
+#define ASM_DATA ".section .data\n"
+#endif
+
 #ifdef __USER_LABEL_PREFIX__
 #define ASM_SYM(name) PORT_ASMSYM_STR(__USER_LABEL_PREFIX__) name
 #else

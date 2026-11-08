@@ -1,4 +1,12 @@
 #include <os_extension.h>
+#include "game/image_bank.h"
+#include "game/initBondDATAdefaults.h"
+#include "game/initactorpropstuff.h"
+#include "game/initanitable.h"
+#include "game/initgamedata.h"
+#include "game/language.h"
+#include "game/objective_status.h"
+#include "game/vtxstore.h"
 #include <PR/os.h>
 #include "bondview.h"
 #include <bondconstants.h>
@@ -191,7 +199,7 @@ void bossInitMainthreadData(void)
     OSMesg bossmsg;
     OSTimer bosstimer;
     OSMesgQueue bossmq;
-    u32 start;
+    uintptr_t start;
     u32 unused;
     s32 i;
 
@@ -254,7 +262,7 @@ void bossInitMainthreadData(void)
         extern void *portGetMempArena(u32 *outsize);
         u32 arenasize;
         start = portGetMempArena(&arenasize);
-        mempCheckMemflagTokens(start, arenasize);
+        mempCheckMemflagTokens((uintptr_t)start, arenasize);
     }
 #endif
     mempResetBank(MEMPOOL_PERMANENT);
@@ -373,7 +381,7 @@ void bossMainloop(void)
     u32 pendingGfx = 0;
     s32 freeGfx;
     s32 mainTickElapsed;
-    s32 rspReplyMsg;
+    OSMesg rspReplyMsg;
 
     u32 unused_stackpadding_[56];
 
@@ -848,8 +856,8 @@ void bossMainloop(void)
                                 indycommHostSendDump(taskGrabBuffer, (u8*)0x80000000, 0x400000);
                             }
 
-                            rspReplyMsg = (s32)(&localGfxDoneMsg);
-                            rspGfxTaskStart(firstGdl, gdl, 0, (s32*)rspReplyMsg);
+                            rspReplyMsg = (OSMesg)&localGfxDoneMsg;
+                            rspGfxTaskStart(firstGdl, gdl, 0, rspReplyMsg);
 
                             pendingGfx++;
                             memaSingleDefragPass();

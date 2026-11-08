@@ -1,4 +1,9 @@
 #include <ultra64.h>
+#include "game/lightfixture.h"
+#include "game/model.h"
+#include "game/tex.h"
+#include "game/ob.h"
+#include "mema.h"
 #include <PR/os.h>
 #include <PR/gbi.h>
 #include <gbi_extension.h>
@@ -72,7 +77,7 @@ enum GlobalVisOpcode {
 };
 
 extern struct unk_portalstruct table_for_portals[PORTMAX];
-extern s32 ptr_bgdata_offsets;
+extern intptr_t ptr_bgdata_offsets;
 extern s32 dword_CODE_bss_8007FF88;
 extern s32 *dword_CODE_bss_8007FF90;
 extern f32 *dword_CODE_bss_8007FF94;
@@ -97,10 +102,10 @@ extern s32 dword_CODE_bss_800815f8;
 
 // bss
 //CODE.bss:8007BF90
-s32 ptr_bg_data;
+intptr_t ptr_bg_data;
 
 //CODE.bss:8007BF94
-s32 gptr_stan;
+intptr_t gptr_stan;
 
 /**
  * address 8007BF98
@@ -355,14 +360,18 @@ void sub_GAME_7F0B37EC(void) {
     u32 masked;
 
     ptr = (u8 *)specialportalarray;
+#ifdef TARGET_N64
     end = (u8 *)&g_BgCurrentRoom;
+#else
+    end = specialportalarray + sizeof(specialportalarray);
+#endif
 
     do {
         if (levelentry_index == *ptr++) {
             do {
                 portal = ptr[0];
                 while (ptr[1] >= portal) {
-                    ((u8 *)g_BgPortals)[(portal << 3) + 6] |= 2;
+                    g_BgPortals[portal].controlbytes1 |= 2;
                     portal++;
                 }
 
@@ -375,7 +384,7 @@ void sub_GAME_7F0B37EC(void) {
         }
 
         ptr++;
-    } while ((u32)ptr < (u32)end);
+    } while ((uintptr_t)ptr < (uintptr_t)end);
 }
 
 
@@ -1056,7 +1065,7 @@ void load_bg_file(LEVEL_INDEX levelid)
         s32 bgidx = fileGetIndex((u8 *) bgname);
         (void) size;
         (void) header;
-        ptr_bg_data = (s32) obGetBGFileData((u8 *) bgname);
+        ptr_bg_data = (intptr_t) obGetBGFileData((u8 *) bgname);
         {
             extern void portHwNoteBgHeader(s32 bgidx);
             portHwNoteBgHeader(bgidx); /* tickhz=hw: the N64's two header reads (frametiming.c) */
@@ -1072,10 +1081,20 @@ void load_bg_file(LEVEL_INDEX levelid)
         ptr_bgdata_offsets = ptr_bg_data;
         ptr_bgdata_room_fileposition_list =
             (bg_room_data *) BG_SEG_TO_PTR(ptr_bg_data, ((s32 *) ptr_bg_data)[1]);
+#ifdef GE_NATIVE_64
+        ptr_bgdata_room_fileposition_list = romfileBgNativeRooms((void *)ptr_bg_data);
+#endif
     }
 #endif
  
-    gptr_stan = (s32) _fileNameLoadToBank(levelinfotable[levelentry_index].bg_stan_filename, 2, 0, 4);
+    gptr_stan = (intptr_t) _fileNameLoadToBank(levelinfotable[levelentry_index].bg_stan_filename, 2, 0, 4);
+#ifdef GE_NATIVE_64
+    {
+        extern struct StanPrefixRecord *romfileStanNativePrefix(u8 *data);
+        gptr_stan = (intptr_t)romfileStanNativePrefix((u8 *)gptr_stan);
+    }
+#endif
+
 
 #ifndef TARGET_N64
     { /* ROM loading Phase D: tell stan.c whether this stan came off the
@@ -1112,8 +1131,11 @@ void load_bg_file(LEVEL_INDEX levelid)
     if (dword_CODE_bss_8007BF98 == 0)
     {
         dword_CODE_bss_8007FF88 = 2;
-        ptr_bgdata_offsets = (s32)data;
+        ptr_bgdata_offsets = (intptr_t)data;
         ptr_bgdata_room_fileposition_list = (bg_room_data *) BG_SEG_TO_PTR(data, ((s32 *)ptr_bgdata_offsets)[1]);
+#ifdef GE_NATIVE_64
+        ptr_bgdata_room_fileposition_list = romfileBgNativeRooms(data);
+#endif
         
         // Keep this fake goto for matching.
         goto dummy_label_543534; dummy_label_543534: ;
@@ -1126,6 +1148,9 @@ void load_bg_file(LEVEL_INDEX levelid)
         }
  
         g_BgPortals = (bg_portal_data_entry *) BG_SEG_TO_PTR(data, ((s32 *)ptr_bgdata_offsets)[2]);
+#ifdef GE_NATIVE_64
+        g_BgPortals = romfileBgNativePortals(data);
+#endif
 
         if (1);
 
@@ -1191,7 +1216,7 @@ void load_bg_file(LEVEL_INDEX levelid)
                         continue;
                     }
 #endif
-                    ((bg_envdata_entry_local *)dword_CODE_bss_8007FF90)[i].data = getIndexOfPORTALID((s32) BG_SEG_TO_PTR(ptr_bg_data, ((bg_envdata_entry_local *)dword_CODE_bss_8007FF90)[i].data));
+                    ((bg_envdata_entry_local *)dword_CODE_bss_8007FF90)[i].data = getIndexOfPORTALID((intptr_t) BG_SEG_TO_PTR(ptr_bg_data, ((bg_envdata_entry_local *)dword_CODE_bss_8007FF90)[i].data));
                 }
             }
         }
@@ -2553,7 +2578,7 @@ char *bgDebPrintROOMID(s32 roomId)
 bg_queued_portal_entry g_BgPortalQueue[BG_PORTAL_QUEUE_LEN];
 
 bg_portal_data_entry *g_BgPortals;
-s32 ptr_bgdata_offsets;
+intptr_t ptr_bgdata_offsets;
 s32 dword_CODE_bss_8007FF88;
 bg_room_data *ptr_bgdata_room_fileposition_list;
 s32 *dword_CODE_bss_8007FF90;
@@ -2912,13 +2937,13 @@ u8 getROOMID_isNeighborToRendered(s32 roomID)
 }
 
 
-s32 getIndexOfPORTALID(s32 portalID)
+s32 getIndexOfPORTALID(intptr_t portalID)
 {
     s32 i;
 
     for(i = 0; g_BgPortals[i].offset_portal != NULL; i++)
     {
-        if (portalID == (s32)g_BgPortals[i].offset_portal)
+        if (portalID == (intptr_t)g_BgPortals[i].offset_portal)
         {
             return i;
         }
@@ -3098,9 +3123,10 @@ s32 bgLoadRoomPrimaryGdl(s32 roomnum, u8 *dst, s32 allocsize)
      * texLoadFromGdl can then read from scratch and write the final
      * texture-processed GDL/data back to dst.
      */
-    scratch = dst + (allocsize - expanded_size);
+    scratch = dst + (allocsize - expanded_size / 8 * sizeof(Gfx));
 
     texCopyGdls((Gfx *)dst, (Gfx *)scratch, expanded_size);
+    expanded_size = expanded_size / 8 * sizeof(Gfx);
 
     clear_light_fixturetable_in_room(roomnum);
 
@@ -3188,14 +3214,15 @@ s32 bgLoadRoomSecondaryGdl(s32 roomnum, u8 *dst, s32 allocsize)
      * texLoadFromGdl can then read from scratch and write the final
      * texture-processed GDL/data back to dst.
      */
-    scratch = dst + (allocsize - expanded_size);
+    scratch = dst + (allocsize - expanded_size / 8 * sizeof(Gfx));
 
     texCopyGdls((Gfx *)dst, (Gfx *)scratch, expanded_size);
+    expanded_size = expanded_size / 8 * sizeof(Gfx);
 
 #ifndef TARGET_N64
     { extern s32 g_LightDbgRoomLoad; g_LightDbgRoomLoad = 1; }
 #endif
-    size = texLoadFromGdl((Gfx *)scratch, (Gfx *)expanded_size, (Gfx *)dst, NULL);
+    size = texLoadFromGdl((Gfx *)scratch, expanded_size, (Gfx *)dst, NULL);
 #ifndef TARGET_N64
     { extern s32 g_LightDbgRoomLoad; g_LightDbgRoomLoad = 0; }
 #endif
@@ -3526,7 +3553,7 @@ void bgLoadRoomModelData(s32 roomID)
      * Keep this prototype visible here for IDO codegen.
      * Without it, the memaRealloc call below schedules a2 too early.
      */
-    s32 memaRealloc(s32 addr, u32 oldsize, u32 newsize);
+    s32 memaRealloc(intptr_t addr, u32 oldsize, u32 newsize);
 
     s32 allocsize;
     s32 used;
@@ -3659,7 +3686,7 @@ void bgLoadRoomModelData(s32 roomID)
     // If wasted space is detected, shrink allocated memory block.
     if (allocsize != ((used + 0x20) & ~0xf))
     {
-        memaRealloc((s32)data, allocsize, ((used + 0x20) & ~0xf));
+        memaRealloc((intptr_t)data, allocsize, ((used + 0x20) & ~0xf));
     }
 
     // Same branches, only the LUT parameter changes
@@ -4036,14 +4063,14 @@ void bgBuildRoomVtxBounds(s32 roomID)
 
             numvertices = ((((gdl[cmdindex].words.w0 >> 16) & 0xFF) >> 4) & 0xf) + 1;
 
-            vtx = (Vtx *)(SEGMENT_OFFSET(gdl[cmdindex].words.w1) + (u32)vertices);
+            vtx = (Vtx *)(SEGMENT_OFFSET(gdl[cmdindex].words.w1) + (uintptr_t)vertices);
 
 #ifndef TARGET_N64
             { /* bring-up (sanitizer sweep catch #6): misaligned Vtx deref -
                * dump the inputs for the first few batches to see whether w1
                * is a segment word, a host pointer, or byte-scrambled */
                 static s32 n;
-                if (((u32) vtx & 3) != 0) {
+                if (((uintptr_t) vtx & 3) != 0) {
                     if (n < 24) {
                         n++;
                         printf("ge: vtxbounds room=%d cmd=%d w0=%08x w1=%08x vertices=%p vtx=%p\n",
@@ -4323,19 +4350,14 @@ bool bgTestRayIntersectionInRoom(coord3d *from, coord3d *to, coord3d *dir, RoomV
 
     gdl = (Gfx *) g_BgRoomInfo[roomnum].ptr_expanded_mapping_info;
     gdl = &gdl[point->gdlindex];
-    /* PORT: room GDLs are native-word streams on PC (texCopyGdls swaps at
-     * load), but the byte-position operand reads below assume the big-endian
-     * image, so the walker's opcode test always missed and the exact wall-hit
-     * path (triangle, texture material, light fixture breaking) never ran. The
-     * w1 reads stay unconditional because ((u32 *) gdl)[1] yields the true word
-     * on both targets; same fix as propobj.c bgTestHitOnObj. */
+    /* Read command words through Gfx: native commands have pointer-sized operands. */
 #ifdef TARGET_N64
     vtxoff = ((u8 *) gdl)[1] & 0xf;
 #else
     vtxoff = (gdl->words.w0 >> 16) & 0xf;
 #endif
     temp.vertices = (Vertex *)g_BgRoomInfo[roomnum].vertices;
-    vtxbase = (Vertex *)((s32)temp.vertices + (((u32 *)gdl)[1] & 0x00ffffff));
+    vtxbase = (Vertex *)((u8 *)temp.vertices + (gdl->words.w1 & 0x00ffffff));
     temp.roominfo = &g_BgRoomInfo[roomnum];
     bestScore = 0x7FFFFFFF;
     found = 0;
@@ -4413,7 +4435,7 @@ bool bgTestRayIntersectionInRoom(coord3d *from, coord3d *to, coord3d *dir, RoomV
 
                 if (bgTestRayIntersectsBbox(from, dir, (s32 *) (&bboxMin), (s32 *) (&bboxMax)))
                 {
-                    if (intersectRayTriangle((Vertex *)((s32)vtxbase - (0 - (idx[0] << 4))), (Vertex *)((s32)vtxbase - (0 - (idx[1] << 4))), (Vertex *)((s32)vtxbase - (0 - (idx[2] << 4))), (coord3d *) (((roomnum * 24) + ((s32) ptr_bgdata_room_fileposition_list)) + 12), from, to, dir, &hitbuf))
+                    if (intersectRayTriangle((Vertex *)((intptr_t)vtxbase - (0 - (idx[0] << 4))), (Vertex *)((intptr_t)vtxbase - (0 - (idx[1] << 4))), (Vertex *)((intptr_t)vtxbase - (0 - (idx[2] << 4))), &ptr_bgdata_room_fileposition_list[roomnum].pos, from, to, dir, &hitbuf))
                     {
                         tcmd = gdl;
                         dx = ((s32) hitbuf.hitpos.x) - ((s32) from->x);
@@ -4471,7 +4493,7 @@ bool bgTestRayIntersectionInRoom(coord3d *from, coord3d *to, coord3d *dir, RoomV
                         {
                             /* unpromoted stragglers keep segment words -
                              * classify before dereferencing (propobj.c twin) */
-                            u32 timg = tcmd->words.w1;
+                            uintptr_t timg = tcmd->words.w1;
 
                             if (timg >= 0x10000000u && (timg >> 16) != 0xABCDu)
                             {
@@ -4617,7 +4639,7 @@ bool bgTestRayIntersectionInRoom(coord3d *from, coord3d *to, coord3d *dir, RoomV
 
                         if (bgTestRayIntersectsBbox(from, dir, (s32 *) (&bboxMin2), (s32 *) (&bboxMax2)))
                         {
-                            if (intersectRayTriangle((Vertex *)((s32)vtxbase - (0 - (idx2[0] << 4))), (Vertex *)((s32)vtxbase - (0 - (idx2[1] << 4))), (Vertex *)((s32)vtxbase - (0 - (idx2[2] << 4))), (coord3d *) (((roomnum * 24) + ((s32) ptr_bgdata_room_fileposition_list)) + 12), from, to, dir, &hitbuf))
+                            if (intersectRayTriangle((Vertex *)((intptr_t)vtxbase - (0 - (idx2[0] << 4))), (Vertex *)((intptr_t)vtxbase - (0 - (idx2[1] << 4))), (Vertex *)((intptr_t)vtxbase - (0 - (idx2[2] << 4))), &ptr_bgdata_room_fileposition_list[roomnum].pos, from, to, dir, &hitbuf))
                             {
                                 tcmd = gdl;
                                 dx = ((s32) hitbuf.hitpos.x) - ((s32) from->x);
@@ -4672,7 +4694,7 @@ bool bgTestRayIntersectionInRoom(coord3d *from, coord3d *to, coord3d *dir, RoomV
                                 else
                                 {
                                     /* see the G_TRI1 twin above */
-                                    u32 timg = tcmd->words.w1;
+                                    uintptr_t timg = tcmd->words.w1;
 
                                     if (timg >= 0x10000000u && (timg >> 16) != 0xABCDu)
                                     {
@@ -4835,27 +4857,27 @@ bool bgTestBulletHitBackground(coord3d *from, coord3d *to, s32 roomnum, struct H
     {
         point = (RoomVtxBatchBounds *)hit->tricmd;
 
-        if (((u8 *)((Gfx*)point))[0] != G_SETTILE) 
+        if ((((Gfx *)point)->words.w0 >> 24) != G_SETTILE)
         {
             while ((Gfx *)g_BgRoomInfo[roomnum].ptr_expanded_mapping_info < ((Gfx*)point)) 
             {
                 point = (RoomVtxBatchBounds *)((Gfx *)point - 1);
-                if (((u8 *)((Gfx*)point))[0] == G_SETTILE) 
+                if ((((Gfx *)point)->words.w0 >> 24) == G_SETTILE)
                 {
                     break;
                 }
             }
         }
 
-        if (((Gfx*)point) == g_BgRoomInfo[roomnum].ptr_expanded_mapping_info) 
+        if ((((Gfx *)point)->words.w0 >> 24) != G_SETTILE)
         {
             hit->tileformat = -1;
             hit->tilesize = -1;
         } 
         else 
         {
-            hit->tileformat = ((u32)((u8 *)((Gfx*)point))[1]) >> 5;
-            hit->tilesize = (((Gfx*)point)->words.w0 << 11) >> 30;
+            hit->tileformat = (((Gfx *)point)->words.w0 >> 21) & 7;
+            hit->tilesize = (((Gfx *)point)->words.w0 >> 19) & 3;
         }
     }
 
@@ -5213,7 +5235,7 @@ s32 sub_GAME_7F0B7F84(s32 value, s32 roomnum, s32 portalnum /*canonically p*/, s
     struct PortalMetric metric;
     f32 playermetric;
     f32 portalmetric;
-    s32 i;
+    intptr_t i;
 #ifndef TARGET_N64
     s32 s_PortalDbg;
 #endif
@@ -5269,7 +5291,7 @@ s32 sub_GAME_7F0B7F84(s32 value, s32 roomnum, s32 portalnum /*canonically p*/, s
         return value;
     }
 
-    i = (s32) &D_800442FC[portalnum];
+    i = (intptr_t) &D_800442FC[portalnum];
 
     if (i);
 
@@ -6320,11 +6342,11 @@ void bgRoomCalcBB(s32 room) // canonical name
     StanRoomBounds limits;
     u8 wasloaded;
 
-    roomdata = (bg_room_data *) ((s32) ptr_bgdata_room_fileposition_list + room * 24);
+    roomdata = &ptr_bgdata_room_fileposition_list[room];
 
     if (roomdata->pPointTableBin == NULL)
     {
-        if ((room < dword_CODE_bss_8007B9DC) && ((s32) firststaninroom[room] != ((StanRoomBounds *) vertices)->min[j] % 1))
+        if ((room < dword_CODE_bss_8007B9DC) && ((intptr_t) firststaninroom[room] != ((StanRoomBounds *) vertices)->min[j] % 1))
         {
             for (j = 0; j < 3; j++)
             {
@@ -6353,7 +6375,7 @@ void bgRoomCalcBB(s32 room) // canonical name
     }
 
     vertices = g_BgRoomInfo[room].vertices;
-    roomdata = (bg_room_data *) ((s32) ptr_bgdata_room_fileposition_list + room * 24);
+    roomdata = &ptr_bgdata_room_fileposition_list[room];
 
     limits.minX = 0x7fff;
     limits.minY = 0x7fff;
@@ -6362,7 +6384,7 @@ void bgRoomCalcBB(s32 room) // canonical name
     limits.maxY = -0x7fff;
     limits.maxZ = -0x7fff;
 
-    for (; vertices < (Vtx *) ((s32) g_BgRoomInfo[room].vertices + g_BgRoomInfo[room].usize_point_index_binary); vertices++)
+    for (; vertices < (Vtx *) ((intptr_t) g_BgRoomInfo[room].vertices + g_BgRoomInfo[room].usize_point_index_binary); vertices++)
     {
         for (j = 0; j < 3; j++)
         {
@@ -6729,7 +6751,7 @@ s32 bgGetPortalBetweenRooms(s32 room1, s32 room2, coord3d *arg2, coord3d *arg3)
     s32 portalIndex = -1;
 
     #ifndef DEBUG
-        #ifdef TARGET_N64
+#ifdef TARGET_N64
             #define osSyncPrintf(x)
         #else
             #define osSyncPrintf(...) /* PC: gcc requires variadic for arg'd calls */

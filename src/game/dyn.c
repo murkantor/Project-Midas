@@ -1,4 +1,6 @@
 #include <ultra64.h>
+#include "deb.h"
+#include "game/player.h"
 #include "dyn.h"
 #include <token.h>
 #include <str.h>

@@ -74,14 +74,22 @@ s32 romfileStanConvert(u8 *data, u32 size, const char *name, const u8 *compiled)
         return 0;
     }
     put32(data, 0);
+#ifdef GE_NATIVE_64
+    put32(data + 4, first);
+#else
     put32(data + 4, (u32) (uintptr_t) (data + first));
+#endif
     for (i = 0; i < nrooms; i++) {
         u32 off = be32(data + 8 + i * 4);
         if (off < first || off >= size) {
             portConLogf("ge: romdata: stan %s: room %u tile offset 0x%X outside the tiles (0x%X..0x%X)\n", name, i, off, first, size);
             return 0;
         }
+#ifdef GE_NATIVE_64
+        put32(data + 8 + i * 4, off);
+#else
         put32(data + 8 + i * 4, (u32) (uintptr_t) (data + off));
+#endif
     }
     /* the zero terminator after the rooms stays zero */
 
@@ -151,3 +159,23 @@ s32 romfileStanConvert(u8 *data, u32 size, const char *name, const u8 *compiled)
     }
     return 1;
 }
+
+#ifdef GE_NATIVE_64
+#include "game/stan.h"
+#include "memp.h"
+struct StanPrefixRecord *romfileStanNativePrefix(u8 *data)
+{
+    u32 *raw = (u32 *)data;
+    u32 count = 0, i;
+    struct StanPrefixRecord *prefix;
+    StandTile **rooms;
+    while (raw[2 + count] != 0) count++;
+    prefix = mempAllocBytesInBank(sizeof(*prefix) + (count + 1) * sizeof(StandTile *), MEMPOOL_STAGE);
+    prefix->stanfile = 0;
+    prefix->ptr_firstroom = (StandTile *)(data + raw[1]);
+    rooms = &prefix->ptr_firstroom + 1;
+    for (i = 0; i < count; i++) rooms[i] = (StandTile *)(data + raw[2 + i]);
+    rooms[count] = NULL;
+    return prefix;
+}
+#endif

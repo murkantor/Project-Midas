@@ -1,4 +1,5 @@
 #include <ultra64.h>
+#include <assert.h>
 #include <PR/os.h>
 #include "init.h"
 #include "sched.h"

@@ -1,7 +1,5 @@
-#if !defined(TARGET_N64) && defined(__cplusplus)
-/* PC port: this header shadows the toolchain's <string.h>; C++ TUs (fast3d)
- * defer to the real one, which libstdc++ needs. C TUs keep the minimal stub,
- * because the hosted header's bcopy/bzero/bcmp conflict with PR/os.h. */
+#if !defined(TARGET_N64)
+/* Host builds use libc declarations, including macOS fortified string macros. */
 #include_next <string.h>
 #else
 
