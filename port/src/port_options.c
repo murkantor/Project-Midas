@@ -242,6 +242,8 @@ static const struct PortOpt sOpts[] = {
     TOGGLE("aim_lock",           "[display]", "Aim Lock\n",           PORTOPT_CAT_GAMEPLAY),
     TOGGLE("head_roll",          "[display]", "Stamina Sway\n",       PORTOPT_CAT_GAMEPLAY), /* replaces the inverted no_head_roll;
                                                                                               * formerly labelled "Head Roll" */
+    TOGGLE("random_blood",       "[display]", "Random Blood\n",       PORTOPT_CAT_GAMEPLAY),
+
     /* Multiplayer-only copies, used with two or more players and set on the MP Options sheet.
      * The first two split Rare's four-way MP "Aim" row into its two halves. */
     TOGGLE("mp_sight_on_screen", "[display]", "Sight on Screen\n",    PORTOPT_CAT_GAMEPLAY),

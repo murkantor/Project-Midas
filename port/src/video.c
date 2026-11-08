@@ -256,6 +256,7 @@ static int s_CfgTrueEnemyRockets = 1; /* 0 = restore the vanilla Enemy Rockets
                                        * the guard with their original
                                        * weapon right after giving them the
                                        * rocket launcher) */
+static int s_CfgRandomBlood = 0;   /* [display] random_blood: randomize blood splat colours */
 static int s_CfgShowFps = 0;          /* 1 = in-game FPS/TPS overlay strip */
 /* what midas.ini literally contained, so the derived value can be written back
  * only when the file disagrees */
@@ -1111,6 +1112,7 @@ static int videoSetDisplayOption(const char *key, const char *value)
     if (SDL_strcasecmp(key, "distance_fading") == 0) { s_CfgDistanceFading = SDL_atoi(value); return 1; }
     if (SDL_strcasecmp(key, "true_enemy_rockets") == 0) { s_CfgTrueEnemyRockets = SDL_atoi(value); return 1; }
     if (SDL_strcasecmp(key, "show_fps") == 0)      { s_CfgShowFps = SDL_atoi(value); return 1; }
+    if (SDL_strcasecmp(key, "random_blood") == 0)  { s_CfgRandomBlood = SDL_atoi(value); return 1; }
     if (SDL_strcasecmp(key, "classic_saved") == 0)
     {
         int f[CLASSIC_SAVED_MAX];
@@ -1534,6 +1536,7 @@ s32 portVideoOptionGet(const char *key, s32 *out)
     if (SDL_strcasecmp(key, "true_enemy_rockets") == 0) { *out = s_CfgTrueEnemyRockets; return 1; }
     if (SDL_strcasecmp(key, "adzy") == 0)          { *out = s_CfgAdzy;         return 1; }
     if (SDL_strcasecmp(key, "unlock_all") == 0)    { *out = s_CfgUnlockAll;    return 1; }
+    if (SDL_strcasecmp(key, "random_blood") == 0)    { *out = s_CfgRandomBlood;    return 1; }
     return 0;
 }
 
@@ -5857,4 +5860,12 @@ s32 portMpP1EndsMatch(void)
 s32 portVideoScopeSteady(void)
 {
     return s_CfgScopeSteady;
+}
+
+s32 portRandomBlood(void)
+{
+    static s32 env = -1;
+    s32 e = videoEnvKnob("GE_RANDOMBLOOD", &env);
+
+    return (e == 2) ? (s_CfgRandomBlood != 0) : e;
 }

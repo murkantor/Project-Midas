@@ -85,3 +85,8 @@ f32 portInputMouseAimScale(void)
 {
     return 1.0f;
 }
+
+s32 portRandomBlood(void)
+{
+    return 0;
+}
