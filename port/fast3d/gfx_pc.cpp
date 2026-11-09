@@ -5274,10 +5274,15 @@ static void gfx_sp_movemem(uint8_t index, uint8_t offset, const void* data) {
             break;
         case G_MV_L0:
         case G_MV_L1:
-        case G_MV_L2:
-            // NOTE: reads out of bounds if it is an ambient light
-            memcpy(rsp.current_lights + (index - G_MV_L0) / 2, data, sizeof(Light_t));
+        case G_MV_L2: {
+            const uint8_t slot = (index - G_MV_L0) / 2;
+            if (rsp.current_num_lights > MAX_LIGHTS + 1 || slot >= rsp.current_num_lights)
+                break;
+            Light_t *light = &rsp.current_lights[slot];
+            memset(light, 0, sizeof(*light));
+            memcpy(light, data, slot + 1 == rsp.current_num_lights ? sizeof(Ambient_t) : sizeof(*light));
             break;
+        }
     }
 }
 
