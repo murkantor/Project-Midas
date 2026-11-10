@@ -99,6 +99,14 @@ static void portFadeNote(PropRecord *prop, s32 state, s32 alpha, f32 foga);
 //Horizontal friction applied when projectile is sliding.
 #define PROJECTILE_FRICTION_FACTOR      0.9f
 
+#ifndef TARGET_N64
+/* Landed grenade brake cadence for live play, in fields per frame; vanilla used
+ * the frame's own delta on every field of the slide, which tied the slide length
+ * to frame rate. 3.0 matches the N64's roughly 20 fps frame, the same as
+ * gunfire.c's PLAYER_LAUNCH_CADENCE, where 60Hz PC play would be 1.0. */
+#define GRENADE_SLIDE_CADENCE           3.0f
+#endif
+
 #if defined(VERSION_EU)
 
 #define AUTOGUN_YAW_MAX_SPEED          0.0008377581f
@@ -5381,7 +5389,23 @@ s32 objTick(struct PropRecord *prop)
 						{
 							if (Rocket->unk94 > 0.0f)
 							{
+#ifndef TARGET_N64
+								{ /* GE_TICKHZ: on N64 a landed grenade's brake scaled with the frame's
+								   * delta (about 3 fields) on every field of this loop, so pin that
+								   * console cadence live and use the recorded delta in demo replay to
+								   * keep demos in sync. */
+									extern s32 is_ramrom_flag;
+									extern s32 g_ramromPlayBackFlag;
+									extern s32 recording_ramrom_flag;
+									f32 cad = (is_ramrom_flag != 0 || g_ramromPlayBackFlag != 0 || recording_ramrom_flag != 0)
+												? g_GlobalTimerDelta
+												: GRENADE_SLIDE_CADENCE;
+
+									temp_f12_5 = (Rocket->unk94 * cad) / sqrtf((Rocket->speed.f[0] * Rocket->speed.f[0]) + (Rocket->speed.f[2] * Rocket->speed.f[2]));
+								}
+#else
 								temp_f12_5 = (Rocket->unk94 * g_GlobalTimerDelta) / sqrtf((Rocket->speed.f[0] * Rocket->speed.f[0]) + (Rocket->speed.f[2] * Rocket->speed.f[2]));
+#endif
 								if (temp_f12_5 >= 1.0f)
 								{
 									Rocket->speed.f[0] = 0.0f;
