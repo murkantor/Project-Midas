@@ -1,2 +1,5 @@
 # Normalize line endings to LF for text files.
 * text=auto eol=lf
+
+# Diff the SDL source as text even against revisions containing a literal NUL.
+port/fast3d/gfx_sdl2.cpp diff

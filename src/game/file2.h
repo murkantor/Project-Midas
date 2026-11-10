@@ -38,4 +38,21 @@ bool check_aztec_completed_any_folder_secret_00(void);
 bool fileIsEgyptCompletedOn00AnyFolder(void);
 LEVEL_SOLO_SEQUENCE fileGetHighestStageUnlockedAnyFolder(void);
 
+save_data * fileGetSaveForFoldernum(u32 folder);
+
+
+void fileClearSavefileForFolder(s32 folder);
+void fileUpdateSelectedBondInSave(s32 folder);
+void fileCopySave(s32 folder, save_data *out_save);
+void fileCopyDemoSaveToRamRomSave(u32 folder, save_data *save);
+s32 fileIs007ModeUnlocked(u32 folder);
+bool fileIsCradleCompletedForFolder(s32 folder);
+bool fileIsAztecCompletedOnSecretOr00ForFolder(s32 folder);
+bool fileIsEgyptCompletedOn00ForFolder(int foldernum);
+void fileCopyFolderToFirstFree(s32 foldernum);
+s32 fileGetSaveStageDifficultyTime(save_data* save, LEVEL_SOLO_SEQUENCE levelid, DIFFICULTY difficulty);
+bool fileIsCradleCompletedAnyFolder(void);
+void fileResetRamRomSave(void);
+void fileGenerateCRC(u8 *addressA, u8 *addressB, save_data *retval);
+
 #endif

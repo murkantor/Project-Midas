@@ -1,0 +1,203 @@
+PROJECT MIDAS - CONSOLE HELP
+============================
+
+The in-game console opens with ` (the key left of 1, also called tilde/~).
+Type a command and press Enter. Up/Down recall earlier lines, PgUp/PgDn/Home/
+End scroll, and `help` lists every command.
+
+Most settings are also in the menus. The commands here are the ones with no
+menu row: diagnostics that answer "why is it doing that?" when something
+misbehaves. None of them change how the game plays, and none are saved to
+midas.ini - a restart puts them back to off.
+
+
+==============================================================================
+Audio pump diagnostics:  cl_audio_pump  and  cl_audio_log
+==============================================================================
+
+WHAT THE AUDIO PUMP IS
+
+  The game's audio is synthesised on the CPU by the N64 sound library and
+  handed to your sound card. The code that does this once per frame is
+  called "the pump". It decides how much audio to make each time it runs,
+  and the queue is the backlog of audio waiting to be played.
+
+  Two things can go wrong, and they sound different:
+
+    crackling, popping   the backlog ran out, so the card played silence in
+                         the middle of a sound. The queue was too shallow or
+                         the pump delivered too little.
+
+    delayed sound        the backlog grew too large, so what you hear is old.
+                         The queue was too deep or the card is not draining.
+
+  These two commands show the numbers behind either symptom.
+
+
+CL_AUDIO_PUMP - the on-screen block
+
+  cl_audio_pump 0|1     turn it off or on
+  cl_audio_pump         report the current state without changing it
+
+  On, a block of six lines appears in the top-left corner, where the FPS
+  number normally sits. Player 1's view only, in split-screen.
+
+  THE BLOCK REPLACES THE FPS COUNTER. It shows FPS and TPS itself, so if you
+  also have cl_showfps 1 set, the plain FPS digits are hidden while the block
+  is on and come back when you turn it off. Showing both would print the same
+  two numbers twice.
+
+  It is not saved. It is off after every restart.
+
+
+CL_AUDIO_LOG - the same numbers, to a file
+
+  cl_audio_log 0|1      start or stop writing the log
+  cl_audio_log          report whether it is running
+
+  On, the same figures are written once a second to
+
+      Data/Logs/audio_pump.log
+
+  beside your saves. The file starts fresh each time you turn it on, begins
+  with a legend naming every field, and is written out immediately, so if the
+  game crashes the last line before the crash is still there.
+
+  Roughly 8 KB a minute. The log and the on-screen block are independent: you
+  can run either without the other.
+
+  Use the log for a bug report. One line a second for the length of the
+  problem is far more useful than a description, and it can be compared
+  against the log line the game already prints every 10 seconds.
+
+
+WHY THE LOG CARRIES MORE THAN THE SCREEN
+
+  The screen is for glancing, so each value gets exactly one unit - whichever
+  one makes the question "is this healthy?" answerable without arithmetic.
+  The log is read by someone chasing a specific defect, so it keeps the exact
+  figures too. Two fields differ:
+
+    que    the screen prints bytes; the log prints bytes AND the ms of audio
+           they represent. 3556B is 40ms, and 40ms is what you actually hear
+           as delay. Bytes alone answer "is the pump right?"; ms answers
+           "why does the sound lag?".
+
+    snd    the screen prints ms; the log prints the raw sample counts AND the
+           ms. One sample at 22050 Hz is 0.045 ms, so millisecond figures
+           round away anything smaller than about 22 samples. A slow leak of a
+           few samples per pump is invisible on the screen and obvious in the
+           counts, which is exactly the kind of fault a log exists to catch.
+
+  Both forms are in the line, so a log line can still be read side by side
+  with a screenshot: the ms figures match what the block shows.
+
+
+TIMESTAMPS
+
+  Each line starts with t=, milliseconds since logging began. That is the
+  measure to use for intervals: it is monotonic, so it can never jump
+  backwards, and it is unaffected by the system clock being corrected mid-run.
+
+  The header also records the wall-clock instant logging started:
+
+      # started 2026-10-25 00:29:24 (local); t= below is ms since this instant
+
+  Add t= to that instant to date any line. This matters because nothing else
+  the game logs carries a wall clock: it is what lets you line a line up with
+  a crash.log timestamp, with a ge: stats line in the run log, or with a
+  user's "it went wrong around 21:40". Wall clock on every line was avoided on
+  purpose - it would only add repetition, and a clock correction mid-run would
+  make the file look out of order.
+
+
+READING THE BLOCK
+
+  Example, on a healthy machine at 60 tps with the frame limiter off:
+
+      FPS 533fps TPS 60tps
+      PMP 131k/s RND 130/s
+      QUE 3556/3520B CAP 16384B
+      SND 499ms/500ms
+      DRY 0 OVER 0 SKIP 0 FRC 0
+      STALL 0 CLK 0ms DEV 22050Hz
+
+  The log file has the same figures plus a few more units - see WHY THE LOG
+  CARRIES MORE THAN THE SCREEN below.
+
+  UNITS. Every value carries its own: fps and tps for rates per second, /s for
+  pump counts, B for bytes, ms for milliseconds of audio, Hz for the device
+  rate. DRY, OVER, SKIP and FRC are counts of events and have no unit.
+
+  Field by field. Everything except QUE, CAP, STALL, CLK and DEV is measured
+  over the last half second, so it settles rather than flickering; those five
+  describe the most recent pump only.
+
+  FPS       Frames drawn per second.
+  TPS       Simulation steps per second. Normally 60, whatever FPS is: that is
+            the tick rate, set by Max FPS in the menus. FPS well above TPS just
+            means frames are cheap enough to draw more often than the game
+            updates, which is normal and harmless.
+  PMP       Pump calls per second. This is large because the pump runs many
+            times for each drawn frame. On its own it says nothing about sound.
+  RND       Of those calls, how many actually produced audio. This is the
+            useful half of PMP: around 60 a second is the mixer keeping up.
+  QUE a/b   Bytes of audio waiting to play (a), against the depth the pump is
+            aiming for (b). a slightly above b is normal. a far below b means
+            the card is outrunning the pump.
+  CAP       The ceiling for QUE, in bytes. It grows when the target grows, so a
+            low frame rate can still queue enough audio.
+  SND a/b   Milliseconds of audio produced in the last half second (a), against
+            the half second of real time it was worth (b). THESE SHOULD MATCH.
+            This is the single most important line: matching means audio is
+            keeping pace with real time. a persistently short means the sound
+            is starving, and you will hear it.
+  DRY       Pumps that found the queue empty: the card played silence. Every
+            one is an audible gap. Should be 0. When it happens, the pump
+            automatically keeps more audio queued afterwards, so a few DRY
+            during a stage load are expected and self-correcting.
+  OVER      Frames refused because they would not fit under CAP: the backlog
+            was full. Should be 0. Nonzero means audio is being made faster
+            than the card is playing it.
+  SKIP      Frames the audio validator rejected, played as silence instead.
+            Should be 0. Nonzero is a bug in the sound output, not a pacing
+            problem - worth reporting with the log.
+  FRC       "Forced" frames, used to keep the music sequencer moving during
+            track changes. A few at a track change is normal. A large number
+            that keeps climbing is not.
+  STALL     1 = the sound device has played nothing for 2 seconds. Should be
+            0. At 1 the pump stops trusting the device and runs the game's
+            audio clock on wall time, and after 2 more seconds it closes and
+            reopens the device to retry.
+  CLK       Wall-clock credit in milliseconds of audio. Only nonzero when no
+            device is pacing (no card, or a stalled one) and the samples are
+            being discarded. 0ms means the device is setting the pace, which
+            is what you want.
+  DEV       The rate the device was opened at, in Hz, or 0Hz if no device is
+            open.
+
+
+WHAT TO REPORT
+
+  For any sound problem, include:
+
+    - Data/Logs/audio_pump.log, captured with cl_audio_log 1 running while the
+      problem happens
+    - the rough time you saw the problem, or the t= value from the line where
+      it started - the header's started stamp plus t= dates it exactly
+    - whether the sound was crackling, lagging, or absent
+    - your platform (Windows / Linux / macOS) and your stage or menu
+
+  The useful details are: SND a running below SND b, DRY above zero, OVER above
+  zero, STALL at 1, or DEV at 0. If all of those look healthy while the sound
+  is still wrong, the fault is below the pump - in the device or the driver -
+  and the log says so, which is worth knowing.
+
+
+A NOTE ON HIGH LATENCY AT LOW FRAME RATES
+
+  The pump runs from the frame loop, so at a low frame rate each pump has to
+  queue enough audio to cover the gap until the next one. That backlog is
+  latency: continuous sound a fraction of a second behind beats crackling.
+  At single-digit frame rates QUE and CAP grow accordingly, and that is by
+  design, not a fault.

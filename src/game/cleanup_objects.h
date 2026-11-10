@@ -4,4 +4,7 @@
 
 void cleanupObjects(s32 stage);
 
+
+void cleanupObjectSounds(void);
+
 #endif

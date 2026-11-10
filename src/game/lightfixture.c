@@ -292,9 +292,9 @@ Vtx *lightFindVertexBaseForTri(Gfx *gfx, s32 room_index)
 
     ret = (Vtx *) gfx->words.w1;
 
-    if (((s32) ret & 0xFF000000) == 0x0E000000) 
+    if (((uintptr_t) ret >> 24) == SPSEGMENT_BG_VTX)
     {
-        ret = (s32)g_BgRoomInfo[room_index].vertices + ((s32) ret & 0xFFFFFF);
+        ret = (Vtx *) ((u8 *)g_BgRoomInfo[room_index].vertices + ((uintptr_t) ret & 0xFFFFFF));
     }
 
     return ret;
@@ -410,7 +410,7 @@ void darken_vertex_in_room(Vtx * vertex, s32 room_index)
     if (darkened_light_table_contains_vertex(vertex, room_index) != 0) { return; }
 
     // weird memory stuff going on here
-    vtx_index = ((u32)vertex - (u32)g_BgRoomInfo[room_index].vertices) >> 4;
+    vtx_index = ((uintptr_t)vertex - (uintptr_t)g_BgRoomInfo[room_index].vertices) >> 4;
 
     darkened_light_table[cur_entry_darkened_light_table].room_index = (u16) room_index;
     darkened_light_table[cur_entry_darkened_light_table].vtx_index = vtx_index;
@@ -449,7 +449,7 @@ s32 darkened_light_table_contains_vertex(Vtx * vertex, s32 room_index)
     s32 i;
 
     // weird memory stuff going on here
-    vtx_index = ((u32)vertex - (u32)g_BgRoomInfo[room_index].vertices) >> 4;
+    vtx_index = ((uintptr_t)vertex - (uintptr_t)g_BgRoomInfo[room_index].vertices) >> 4;
 
     for (i = 0; i < DARKENED_LIGHT_TABLE_MAX; i++)
     {

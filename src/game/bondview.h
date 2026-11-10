@@ -197,7 +197,7 @@ struct hand
   f32 field_A3C;
   f32 field_A40;
   ALSoundState * audioHandle;
-  s32 field_A48;
+  ALSoundState *field_A48;
   s32 field_A4C;
   s32 field_A50;
   BeamRecord weapon_beam;
@@ -256,7 +256,19 @@ struct hand
   s32 field_C04;
   s32 volley;  // Number of bullets discharged in a row. For pistols, it's always 1 even if the fire button is held.
   coord3d item_related;
+#ifdef GE_NATIVE_64
+  Model nativeModel;
+  uintptr_t nativeModelData[32];
+#endif
 };
+
+#ifdef GE_NATIVE_64
+#define HAND_MODEL(hand) (&(hand)->nativeModel)
+#define HAND_MODEL_DATA(hand) ((u32 *)(hand)->nativeModelData)
+#else
+#define HAND_MODEL(hand) ((Model *)&(hand)->field_B68)
+#define HAND_MODEL_DATA(hand) ((u32 *)&(hand)->modeldatas)
+#endif
 
 typedef struct InvItem {
     s32 type;
@@ -343,11 +355,11 @@ struct player
    * Used as parameter to gbi macro.
    * Offset 0x005c.
    */
-  s32 field_5C;
+  Mtx *field_5C;
 
-  /* 0x0060 */ s32 field_60;
-  /* 0x0064 */ s32 field_64;
-  /* 0x0068 */ s32 field_68;
+  /* 0x0060 */ Mtx *field_60;
+  /* 0x0064 */ Mtx *field_64;
+  /* 0x0068 */ Mtx *field_68;
 
   /**
    * Collision / clipping related.
@@ -900,6 +912,17 @@ struct player
 
   // offset 0x594
   s32 standcnt;
+#ifdef GE_NATIVE_64
+  union {
+      Model model;
+      struct {
+          u8 gaitModelPrefix[offsetof(Model, gunhand)];
+          s8 animFlipFlag;
+          u8 gaitModelPadding[3];
+          f32 field_5C0;
+      };
+  };
+#else
   Model *model;
   s32 field_59C;
   s32 field_5A0;
@@ -952,6 +975,7 @@ struct player
   s32 field_648;
   s32 field_64C;
   s32 field_650;
+#endif
   s32 field_654;
   s32 field_658;
   s32 field_65C;
@@ -1146,7 +1170,7 @@ struct player
   Mtx* field_10C4;
   Mtx* field_10C8;
   Mtxf* field_10CC;
-  s32 field_10D0; // ptr
+  intptr_t field_10D0; // ptr
 
   /**
    * Offset 0x10d4.
@@ -1154,8 +1178,8 @@ struct player
   Mtxf* viewtoworldmtxf;
   Mtx* projmatrix;
   Mtxf* projmatrixf;
-  s32 field_10E0; // ptr
-  s32 field_10E4; // ptr
+  intptr_t field_10E0; // ptr
+  intptr_t field_10E4; // ptr
   Mtxf* field_10E8;
   Mtxf* field_10EC;
   f32 c_scalelod60; // canonical name
@@ -1214,7 +1238,7 @@ struct player
   f32 swayoffset0;
   f32 swayoffset2;
   f32 field_1280;
-  s32 players_cur_animation;
+  ModelAnimation *players_cur_animation;
   f32 field_1288;
 
   /**
@@ -2303,8 +2327,8 @@ struct player
   s16 registeredroom;
   f32 field_2A08;
   f32 field_2A0C;
-  s32 ptr_text_first_mp_award;
-  s32 ptr_text_second_mp_award;
+  u8 *ptr_text_first_mp_award;
+  u8 *ptr_text_second_mp_award;
   coord3d field_2A18[2];
   s32 field_2A30;
   s32 field_2A34;
@@ -2335,7 +2359,19 @@ struct player
   s32 field_2A74;
   s32 field_2A78;
   s32 field_2A7C;
+#ifdef GE_NATIVE_64
+  Model nativeWatchModel;
+  uintptr_t nativeWatchData[50];
+#endif
 };
+
+#ifdef GE_NATIVE_64
+#define WATCH_MODEL(player) (&(player)->nativeWatchModel)
+#define WATCH_MODEL_DATA(player) ((u32 *)(player)->nativeWatchData)
+#else
+#define WATCH_MODEL(player) ((Model *)&(player)->something_with_watch_object_instance)
+#define WATCH_MODEL_DATA(player) ((u32 *)&(player)->field_2EC)
+#endif
 
 struct firing_anim_struct {
     struct weapon_firing_animation_table * pointer;
@@ -2402,22 +2438,16 @@ typedef struct Weapon1PTransformKeyframe {
     f32 duration;
 } Weapon1PTransformKeyframe;
 
-// placeholder while matching
+// N64 matching placeholder; host movement uses StandTileLocusCallbackRecord.
 struct move_bond_temp_struct {
     s32 unk00;
     s32 unk04;
-#ifndef TARGET_N64
-    /* Padded to 16 bytes because the stan locus walk writes a full
-     * StandTileLocusCallbackRecord through this; N64 keeps the 8-byte layout. */
-    s32 pad08;
-    s32 pad0C;
-#endif
 };
 
 //D:80036424
 extern s32 g_bondviewForceDisarm;
 //D:80036428
-extern s32 resolution;
+extern uintptr_t resolution;
 //D:8003642C
 extern s32 cameraBufferToggle;
 //D:80036430
@@ -2649,9 +2679,9 @@ extern s32 status_bar_text_buffer_index;
 //D:8003689C
 extern s32 display_statusbar;
 //D:800368A0
-extern s32 copy_1stfonttable;
+extern struct font *copy_1stfonttable;
 //D:800368A4
-extern s32 copy_2ndfonttable;
+extern struct fontchar *copy_2ndfonttable;
 //D:800368A8
 extern s32 upper_text_buffer_index;
 //D:800368AC
@@ -2768,7 +2798,7 @@ void jp_hudmsgBottomShow(char *string);
 // VERSION_US
 #define HUDMESSAGEBOTTOM hudmsgBottomShow
 void hudmsgBottomShow(char *string);
-void setFontTables(s32 arg0, s32 arg1);
+void setFontTables(struct fontchar *arg0, struct font *arg1);
 #endif
 
 Gfx * bondviewRenderDebugBondView(Gfx *arg0);
@@ -2815,8 +2845,8 @@ f32 bondviewGetPlayerYawRadians(void);
 Mtxf *camGetWorldToScreenMtxf(void);
 void transformAndNormalizeByLength2Dto3D(struct coord2d *in, coord3d *out, f32 value);
 void bondviewTransformManyPosToViewMatrix(RenderPosView *arg0, s32 arg1);
-s32 sub_GAME_7F078474(void);
-s32 get_BONDdata_field_10E0(void);
+intptr_t sub_GAME_7F078474(void);
+intptr_t get_BONDdata_field_10E0(void);
 Mtx *currentPlayerGetProjectionMatrix(void);
 Gfx *bondviewRenderProp(PropRecord *arg0, Gfx *arg1, s32 arg2);
 f32 getPlayer_c_lodscalez(void);
@@ -2848,5 +2878,35 @@ void bondviewRemovePlayerBody(void);
 void currentPlayerAdjustFade(f32 maxfadetime, s32 r, s32 g, s32 b, f32 frac);
 void bondviewSelectCuff(Model *model, ModelFileHeader *header, s32 switchindex);
 void sub_GAME_7F08976C(f32 param_1);
+
+void *currentPlayerSetMatrix10CC(Mtxf *matrix);
+
+Mtx *currentPlayerGetMatrix10C8(void);
+
+coord3d * bondviewGetCurrentPlayersPosition3(void);
+
+void set_BONDdata_field_10E0(intptr_t arg0);
+void sub_GAME_7F078464(intptr_t arg0);
+intptr_t sub_GAME_7F078474(void);
+
+
+s32 playerTick(PropRecord *prop);
+void bondviewUpdateCameraMatrices(coord3d* cam_pos, coord3d* cam_look_dir, coord3d* cam_up);
+void set_obj_collision_flag(s32 flag);
+s32 get_obj_collision_flag(void);
+void bondviewKillCurrentPlayer(void);
+void set_BONDdata_outside_watch_menu_flag(s32 arg0);
+void transform3Dto2DWithZScaling(coord3d *in, coord3d *out);
+void currentPlayerSetCameraMode(s32 mode);
+s32 currentPlayerGetCrouchPos(void);
+void bondviewSetCurrentPlayerPosition(coord3d *pos, coord3d *pos2, coord3d *offset, StandTile *tile, coord3d *stan_walk_start);
+void currentPlayerSetMatrix10C8(Mtx *matrix);
+void currentPlayerSetMatrix10C4(Mtx *matrix);
+void currentPlayerSetViewToWorldMtxf(Mtxf *matrix);
+void bondviewUpdateFrustumPlanes();
+s32 playerGetCrouchPos(s32 playernum);
+void currentPlayerSetProjectionMatrix(Mtx *matrix);
+void currentPlayerSetProjectionMatrixF(Mtxf *matrix);
+
 
 #endif

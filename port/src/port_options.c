@@ -26,6 +26,7 @@
 #include <stdlib.h> /* atexit: portOptSaveHold's quit-time flush */
 #include <string.h>
 #include <ultra64.h>
+#include "port_options.h"
 
 /* strong on the owning side, weak no-op in libultra_shim.c */
 extern s32 portVideoOptionGet(const char *key, s32 *out);

@@ -492,7 +492,7 @@ void bheadAdjustAnimation(f32 speed)
                 modelSetAnimation(
                     &g_CurrentPlayer->model,
                     // match hack: addu address backwards
-                    (struct ModelAnimation *) ((s32)g_BondMoveAnimationSetup[i].anim_id + (s32)&ptr_animation_table->data),
+                    (struct ModelAnimation *) ((s32)g_BondMoveAnimationSetup[i].anim_id + (intptr_t)&ptr_animation_table->data),
                     (s32) g_CurrentPlayer->animFlipFlag,
                     startframe,
                     0.5f,

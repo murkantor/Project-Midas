@@ -1,4 +1,6 @@
-
+#if !defined(TARGET_N64) && defined(__cplusplus)
+#include_next <math.h>
+#else
 
 #ifndef _MATH_EXT_H_
 #define _MATH_EXT_H_
@@ -99,6 +101,10 @@ float  cosf(float);
 double cos(double);
 
 float  sqrtf(float);
+#ifndef TARGET_N64
+float fabsf(float);
+float tanf(float);
+#endif
 
 #endif
 
@@ -620,4 +626,6 @@ extern float	fcbrt(float);
 }
 #endif
 #endif /* !__MATH_H__ */
+#endif
+
 #endif

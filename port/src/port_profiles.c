@@ -60,6 +60,7 @@
 #include <direct.h> /* _mkdir */
 #endif
 #include <ultra64.h>
+void portProfileClear(s32 player);
 
 extern const char *portRootPath(const char *name); /* main.c: <exe dir>/name */
 extern void portConLogf(const char *fmt, ...);       /* port_console.c */

@@ -359,9 +359,9 @@ void texSelect(Gfx **gdlptr, struct sImageTableEntry *tconfig, u32 arg2, s32 arg
         width = tconfig->width;
         height = tconfig->height;
         
-        if ((u32) tconfig->index < NUM_TEXTURES)
+        if (tconfig->index < NUM_TEXTURES)
         {
-            texLoad((s32 *)tconfig, NULL);
+            texLoad(&tconfig->index, NULL);
         }
 
         aa = PHYS_TO_K0(tconfig->index);

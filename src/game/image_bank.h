@@ -29,6 +29,9 @@ extern s32 globalbank_rdram_offset;
 
 void texReset(void);
 u32 texReadBits(s32 bitCount);
-void texSetBitstring(s32 pos);
+void texSetBitstring(u8 *pos);
+
+
+void image_entries_load(void);
 
 #endif

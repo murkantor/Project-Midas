@@ -66,7 +66,7 @@ extern f32 g_MpSwirlForwardSpeed;
 extern f32 g_MpSwirlDistance;
 extern s32 D_80036420;
 extern s32 g_bondviewForceDisarm;
-extern s32 resolution;
+extern uintptr_t resolution;
 extern s32 cameraBufferToggle;
 extern s32 cameraFrameCounter1;
 extern s32 cameraFrameCounter2;
@@ -130,8 +130,8 @@ extern coord3d ZeroCoordSpawnPos;
 extern s32 status_bar_text_buffer_index;
 extern s32 display_statusbar;
 #ifdef BUGFIX_R0
-extern s32 copy_1stfonttable;
-extern s32 copy_2ndfonttable;
+extern struct font *copy_1stfonttable;
+extern struct fontchar *copy_2ndfonttable;
 #endif
 extern s32 upper_text_buffer_index;
 extern s32 display_upper_text_window;

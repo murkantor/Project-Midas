@@ -1,4 +1,11 @@
 #include <ultra64.h>
+#include "game/bondinv.h"
+#include "game/chraction.h"
+#include "game/debugmenu_handler.h"
+#include "game/gun.h"
+#include "game/loadobjectmodel.h"
+#include "game/lv.h"
+#include "game/propobj.h"
 #include <bondconstants.h>
 #include <bondtypes.h>
 #include "objective_status.h"

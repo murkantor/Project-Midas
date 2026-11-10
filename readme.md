@@ -4,7 +4,7 @@
 
 This is a video game about Jimothy's presumed-dead best friend Jarvis turns out to be alive, and in possession of a space laser he intends to point at a city - so Jimothy goes to the Cuban jungle and drops Jarvis off a satellite dish.
 
-Project Midas is a work-in-progress PC port of GE, built from the N64 decompilation. It runs on Windows and Linux and reads its game data from your own copy of the US cart.
+Project Midas is a work-in-progress PC port of GE, built from the N64 decompilation. It runs on Windows, Linux and macOS and reads its game data from your own copy of the US cart.
 
 ## AI Disclaimer
 
@@ -13,13 +13,14 @@ Claude was used in the making of this project. If you don't agree with this, ple
 ## Playing
 
 1. Put your GE (USA) cart image in the `Data` folder next to the executable. See `Data/README.txt` for the accepted formats and other ways to point the game at it.
-2. Run `ProjectMidas.exe` (Windows) or `ProjectMidas` (Linux).
+2. Run `ProjectMidas.exe` (Windows) or `ProjectMidas` (Linux/macOS).
 
 Files next to the executable:
 
 | Path | What it is |
 | --- | --- |
 | `midas.ini` | Settings. Written on first run; delete it to restore the defaults. See `midas_ini_help.txt`. |
+| `console_help.txt` | The in-game console (`` ` ``), and the audio pump diagnostics `cl_audio_pump` / `cl_audio_log`. |
 | `Data/` | Your cart image goes here. |
 | `Data/Saves/eeprom.bin` | Save file. |
 | `Data/Profiles/` | Player profiles (`.geprofile`) and lifetime multiplayer stats (`.gestats`). |
@@ -30,6 +31,7 @@ Files next to the executable:
 | `gamecontrollerdefault.txt` | Built-in controller layouts. |
 | `gamecontrolleruser.txt` | Your saved controller layouts. |
 | `Data/Logs/ge_direct.log` | The run log on Windows (the game opens no console window). |
+| `Data/Logs/audio_pump.log` | Written while `cl_audio_log 1` is running: one line a second of audio pump state. |
 | `Data/Logs/crash.log` | Written if the game crashes. |
 | `Mods/` | Reserved for modded carts. This build loads the stock cart only. |
 
@@ -37,7 +39,11 @@ An older `ge.ini` is renamed to `midas.ini` automatically on first run.
 
 ## Building
 
-The build runs in Docker, which has every tool and library both builds need. You also need the GE (USA) cart as `baserom.u.z64` in the repository root:
+For a native macOS build, see [the macOS instructions](docs/macos.md). Building on macOS does not require a ROM or extracted assets; playing requires your own US cart image.
+
+For every platform, the CMake options and the clean-build steps, see [BUILD.md](BUILD.md).
+
+The Windows and Linux builds below run in Docker, which has their tools and libraries. You also need the GE (USA) cart as `baserom.u.z64` in the repository root:
 
 ```
 sha1: abe01e4aeb033b6c0836819f549c791b26cfde83

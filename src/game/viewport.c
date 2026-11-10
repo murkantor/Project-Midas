@@ -12,7 +12,7 @@ s32 z_buffer_width; // 0x8008e8f0
 s32 z_buffer_height; // 0x8008e8f4
 
 // data
-s32 z_buffer = 0; // 0x8004f010
+intptr_t z_buffer = 0; // 0x8004f010
 
 /*
  * Address: 0x7f0d2870
@@ -54,7 +54,7 @@ void zbufAllocate(void)
 /*
  * Address: 0x7f0d2938
 */
-void zbufSetBuffer(s32 buffer, s32 width, s32 height) {
+void zbufSetBuffer(intptr_t buffer, s32 width, s32 height) {
     z_buffer = buffer;
     z_buffer_width = width;
     z_buffer_height = height;

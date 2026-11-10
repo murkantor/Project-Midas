@@ -53,6 +53,7 @@ void sub_GAME_7F0062C0(void *anim, s32 arg1, s32 arg2, s32 *arg3);
 */
 void sub_GAME_7F0062C0(void *anim, s32 arg1, s32 arg2, s32 *arg3)
 {
+    anim = portAnimationResolve(anim);
     // todo: is this a struct? see: sub_GAME_7F06D2E4
     s16 sp40[6];
 
@@ -159,7 +160,7 @@ void sets_a_bunch_of_BONDdata_values_to_default(void)
     {
         sub_GAME_7F0062C0(
             // match hack: addu address calculated backwards
-            (void*)((s32)g_BondMoveAnimationSetup[i].anim_id + (s32)&ptr_animation_table->data),
+            (void*)((s32)g_BondMoveAnimationSetup[i].anim_id + (intptr_t)&ptr_animation_table->data),
             (s32)g_BondMoveAnimationSetup[i].loopframe,
             (s32)g_BondMoveAnimationSetup[i].endframe,
             &spD0);
@@ -187,7 +188,7 @@ void sets_a_bunch_of_BONDdata_values_to_default(void)
     modelSetAnimation(
         &g_CurrentPlayer->model,
         // match hack: addu address calculated backwards
-        (struct ModelAnimation *) ((s32)g_BondMoveAnimationSetup[g_CurrentPlayer->headanim].anim_id + (s32)&ptr_animation_table->data),
+        (struct ModelAnimation *) ((s32)g_BondMoveAnimationSetup[g_CurrentPlayer->headanim].anim_id + (intptr_t)&ptr_animation_table->data),
         0,
         g_BondMoveAnimationSetup[g_CurrentPlayer->headanim].loopframe,
         0.5f,

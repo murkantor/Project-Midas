@@ -189,7 +189,7 @@ s32 D_80036420 = 0;
 s32 g_bondviewForceDisarm = 0;
 
 //D:80036428
-s32 resolution = 0;
+uintptr_t resolution = 0;
 //D:8003642C
 s32 cameraBufferToggle = 0;
 //D:80036430
@@ -495,9 +495,9 @@ s32 status_bar_text_buffer_index = 0;
 s32 display_statusbar = 0;
 #ifdef BUGFIX_R0
 //D:800368A0
-s32 copy_1stfonttable = 0;
+struct font *copy_1stfonttable = 0;
 //D:800368A4
-s32 copy_2ndfonttable = 0;
+struct fontchar *copy_2ndfonttable = 0;
 #endif
 //D:800368A8
 s32 upper_text_buffer_index = 0;
@@ -834,11 +834,11 @@ Mtx *currentPlayerGetProjectionMatrix(void) {
     return g_CurrentPlayer->projmatrix;
 }
 
-void set_BONDdata_field_10E0(s32 arg0) {
+void set_BONDdata_field_10E0(intptr_t arg0) {
     g_CurrentPlayer->field_10E0 = arg0;
 }
 
-s32 get_BONDdata_field_10E0(void) {
+intptr_t get_BONDdata_field_10E0(void) {
     return g_CurrentPlayer->field_10E0;
 }
 
@@ -892,11 +892,11 @@ Mtxf *currentPlayerGetMatrix10EC(void) {
     return g_CurrentPlayer->field_10EC;
 }
 
-void sub_GAME_7F078464(s32 arg0) {
+void sub_GAME_7F078464(intptr_t arg0) {
     g_CurrentPlayer->field_10E4 = arg0;
 }
 
-s32 sub_GAME_7F078474(void)
+intptr_t sub_GAME_7F078474(void)
 {
     return g_CurrentPlayer->field_10E4;
 }

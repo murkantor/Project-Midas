@@ -74,6 +74,8 @@ extern void portConLogf(const char *fmt, ...);
  * this is libc's own expansion, brought back under a port name */
 #ifdef _WIN32
 #define port_errno (*_errno())
+#elif defined(__APPLE__)
+#define port_errno (*__error())
 #else
 #define port_errno (*__errno_location())
 #endif
@@ -769,9 +771,11 @@ static enum romfileclass romdataClassOf(const char *name)
             /* the three inline-texture menu models embed segment-5 texture
              * blobs (objecthandler_2.c portSwapInlineTextures) that the model
              * converter does not yet handle - keep them compiled for now */
+#ifndef GE_NATIVE_64
             if (strcmp(name, "PlegalpageZ") == 0 || strcmp(name, "PnintendologoZ") == 0 || strcmp(name, "PgoldeneyelogoZ") == 0) {
                 return CLASS_NONE;
             }
+#endif
             return CLASS_MODEL; /* C<name>Z chr, G<name>Z gun, P<name>Z prop - converted in load_object_fill_header */
         }
     }
@@ -927,14 +931,24 @@ static void romdataTextPreprocess(s32 index, u8 *data, u32 size)
                 portConLogf("ge: romdata: text %s: slot %u offset 0x%X beyond the %u-byte bank - zeroed\n",
                         file_resource_table[index].filename, i, off, size);
             } else {
+#ifdef GE_NATIVE_64
+                v = off;
+#else
                 v = (u32) (uintptr_t) (data + off);
+#endif
             }
         }
         {
             size_t p;
             for (p = 0; p < sizeof(sTextPatches) / sizeof(sTextPatches[0]); p++) {
                 if (sTextPatches[p].slot == i && strcmp(sTextPatches[p].bank, bank) == 0) {
+#ifdef GE_NATIVE_64
+                    if (v != 0 && strlen(sTextPatches[p].text) <= strlen((char *)data + v)) {
+                        strcpy((char *)data + v, sTextPatches[p].text);
+                    }
+#else
                     v = (u32) (uintptr_t) sTextPatches[p].text;
+#endif
                     patched++;
                 }
             }
@@ -943,7 +957,11 @@ static void romdataTextPreprocess(s32 index, u8 *data, u32 size)
             /* a NULL ROM slot is not compared: the generated char *LxE[]
              * arrays drop trailing NULL slots, so compiled[i] may not exist */
             const char *c = compiled[i];
+#ifdef GE_NATIVE_64
+            const char *r = (const char *)data + v;
+#else
             const char *r = (const char *) (uintptr_t) v;
+#endif
             if (c == NULL || strcmp(c, r) != 0) {
                 if (differ == 0) {
                     firstdiff = i;
@@ -998,7 +1016,9 @@ void romdataFilePreprocess(s32 index, u8 *data, u32 size)
         }
         break;
     case CLASS_SETUP:
+#ifndef GE_NATIVE_64
         romfileSetupConvert(data, size, file_resource_table[index].filename, sCompiledData[index]);
+#endif
         break;
     case CLASS_STAN:
         romfileStanConvert(data, size, file_resource_table[index].filename, sCompiledData[index]);

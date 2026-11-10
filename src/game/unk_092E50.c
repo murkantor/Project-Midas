@@ -268,13 +268,13 @@ void sub_GAME_7F092E50(void)
     MipMap2C_Something_Setup[2].words.w0 = (MipMap2C_Something_Setup[2].words.w0 & ~0xFFF) | ((u32)flt_CODE_bss_80079E84 & 0xFFF);
     MipMap2C_Something_Setup[3].words.w0 = (MipMap2C_Something_Setup[3].words.w0 & ~0xFFF000) | ((u32)(((s32)flt_CODE_bss_80079E80 + 90) & 0xFF) << 12);
     MipMap2C_Something_Setup[3].words.w0 = (MipMap2C_Something_Setup[3].words.w0 & ~0xFFF) | (u32)(((s32)flt_CODE_bss_80079E84 + 150) & 0xFF);
-    ((u32 *) MipMap2C_Something_Setup)[8] = (((u32 *) MipMap2C_Something_Setup)[8] & ~0xFF) | (u32) ((sinf(flt_CODE_bss_80079E88) * 127.0f) + 128.0f);
+    MipMap2C_Something_Setup[4].words.w0 = (MipMap2C_Something_Setup[4].words.w0 & ~0xFF) | (u32) ((sinf(flt_CODE_bss_80079E88) * 127.0f) + 128.0f);
 
     MipMap2C_Something2_Setup[2].words.w0 = (MipMap2C_Something2_Setup[2].words.w0 & ~0xFFF000) | (((u32)flt_CODE_bss_80079E80 & 0xFFF) << 12);
     MipMap2C_Something2_Setup[2].words.w0 = (MipMap2C_Something2_Setup[2].words.w0 & ~0xFFF) | ((u32)flt_CODE_bss_80079E84 & 0xFFF);
     MipMap2C_Something2_Setup[3].words.w0 = (MipMap2C_Something2_Setup[3].words.w0 & ~0xFFF000) | ((u32)(((s32)flt_CODE_bss_80079E80 + 90) & 0xFF) << 12);
     MipMap2C_Something2_Setup[3].words.w0 = (MipMap2C_Something2_Setup[3].words.w0 & ~0xFFF) | (u32)(((s32)flt_CODE_bss_80079E84 + 150) & 0xFF);
-    ((u32 *) MipMap2C_Something2_Setup)[8] = (((u32 *) MipMap2C_Something_Setup)[8] & ~0xFF) | (u32) ((sinf(flt_CODE_bss_80079E88) * 127.0f) + 128.0f);
+    MipMap2C_Something2_Setup[4].words.w0 = (MipMap2C_Something_Setup[4].words.w0 & ~0xFF) | (u32) ((sinf(flt_CODE_bss_80079E88) * 127.0f) + 128.0f);
 }
 
 

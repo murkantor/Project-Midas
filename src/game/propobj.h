@@ -157,7 +157,7 @@ void                 maybe_detonate_object_and_its_children(PropRecord *arg0, f3
 struct ModelRoData_BoundingBoxRecord* chrobjGetBboxFromObjectRecord(ObjectRecord *arg0);
 void                 deactivate_alarm_sound_effect(void);
 bool                 chrpropTestPointInPaddedBoundPad(coord3d* pos, f32 arg1, BoundPadRecord *boundpads);
-void                 sub_GAME_7F0A1DA0(f32*, f32*, f32*, f32*, f32, f32, f32, f32, f32, f32);
+void                 sub_GAME_7F0A1DA0(coord3d*, coord3d*, coord3d*, coord3d*, f32, f32, f32, f32, f32, f32);
 void                 modelGetXYExtents(Model *model, f32 *arg1, f32 *arg2, f32 *arg3, f32 *arg4);
 s32                  sub_GAME_7F0448A8(struct PropRecord *arg0);
 PropRecord*          sub_GAME_7F051DD8(struct ObjectRecord* arg0, ModelFileHeader* arg1);
@@ -176,5 +176,30 @@ s32                  objDrop(PropRecord *prop);
 void                 sub_GAME_7F050DE8(Model* model);
 PropRecord          *something_with_generating_object(ChrRecord *self, s32 propid, ITEM_IDS itemid, s32 flags, WeaponObjRecord *weapon, ItemModelFileRecord *prop_header);
 Gfx                 *countdownTimerRender(Gfx *DL);
+
+PropRecord *hatCreateForChr(ChrRecord *chr, s32 modelnum, u32 flags);
+
+Gfx *process_monitor_animation_microcode(Model *model, ModelNode *node, MonitorRecord *screen, Gfx *gdl, s32 arg4, s32 arg5);
+
+PropRecord* doorInit(DoorRecord* door, coord3d* pos, Mtxf* mtx, StandTile* stan, coord3d* coord, coord3d* centre);
+
+
+bool is_clock_drawn_onscreen(void);
+bool propobjFindHit(Model *model, ModelNode *startNode, coord3d *rayPos, coord3d *rayDir, struct HitThing *hitthing, s32 *dstmtxindex, ModelNode **dstnode);
+void sub_GAME_7F04E9BC(PropRecord* prop, struct ShotData* shotdata);
+void objHit(ShotData *shotdata, BulletHit *hit);
+bool objTestForInteract(PropRecord* prop);
+bool doorTestForInteract(PropRecord *prop);
+TICKOP propdoorInteract(PropRecord* doorprop);
+s32 objTick(struct PropRecord *prop);
+void handle_alarm_gas_timer_calldamage(void);
+void save_img_index_to_obj_ani_slot(MonitorRecord *mon, void *unk88);
+void add_ammo_to_inventory(AMMOTYPE ammotype,int amount,int doplaysound,int dodisplaytext);
+void set_sound_effect_for_weapontype_collection(ITEM_IDS weapontype);
+void display_text_for_weapon_in_lower_left_corner(ITEM_IDS weaponid);
+bool objGetOnscreenRenderBounds(PropRecord *prop, coord3d *arg1, struct coord2d *arg2, struct coord2d *arg3);
+void hatAssignToChr(HatRecord* hat, ChrRecord* chr);
+void doorDeactivatePortal(DoorRecord *door);
+bool doorIsClosed(DoorRecord *door);
 
 #endif

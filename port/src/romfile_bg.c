@@ -164,3 +164,41 @@ s32 romfileBgConvert(u8 *data, u32 size, const char *name)
             name ? name : "?", rooms, vis, portals);
     return 1;
 }
+
+#ifdef GE_NATIVE_64
+#include "game/bg.h"
+#include "memp.h"
+#include <string.h>
+
+bg_room_data *romfileBgNativeRooms(const void *data)
+{
+    const u32 *header = data;
+    const u32 *raw = (const u32 *)((const u8 *)data + (header[1] & 0xffffff));
+    u32 count = ((header[3] & 0xffffff) - (header[1] & 0xffffff)) / 24;
+    bg_room_data *rooms = mempAllocBytesInBank(count * sizeof(*rooms), MEMPOOL_STAGE);
+    u32 i;
+    for (i = 0; i < count; i++, raw += 6) {
+        rooms[i].pPointTableBin = (void *)(uintptr_t)raw[0];
+        rooms[i].pPriMappingBin = (void *)(uintptr_t)raw[1];
+        rooms[i].pSecMappingBin = (void *)(uintptr_t)raw[2];
+        memcpy(&rooms[i].pos, raw + 3, sizeof(rooms[i].pos));
+    }
+    return rooms;
+}
+
+bg_portal_data_entry *romfileBgNativePortals(const void *data)
+{
+    const u32 *header = data;
+    const u32 *raw = (const u32 *)((const u8 *)data + (header[2] & 0xffffff));
+    u32 count = 0, i;
+    bg_portal_data_entry *portals;
+    while (raw[count * 2] != 0) count++;
+    portals = mempAllocBytesInBank((count + 1) * sizeof(*portals), MEMPOOL_STAGE);
+    memset(portals, 0, (count + 1) * sizeof(*portals));
+    for (i = 0; i < count; i++) {
+        portals[i].offset_portal = (void *)(uintptr_t)raw[i * 2];
+        memcpy(&portals[i].connectedRoom1, raw + i * 2 + 1, 4);
+    }
+    return portals;
+}
+#endif

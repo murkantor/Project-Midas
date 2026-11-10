@@ -1,4 +1,9 @@
 #include <ultra64.h>
+#include "game/bgfog.h"
+#include "game/vtxstore.h"
+#ifdef GE_NATIVE_64
+#include "romfile_model64.h"
+#endif
 #include <PR/gbi.h>
 #include <bondgame.h>
 #include <bondconstants.h>
@@ -1232,9 +1237,9 @@ s32 get_numguards(void)
 }
 
 
-void get_ptr_allocated_block_for_vertices(int param_1)
+Vertex *get_ptr_allocated_block_for_vertices(s32 param_1)
 {
-  dynAllocate(param_1 << 4);
+  return dynAllocate(param_1 * sizeof(Vertex));
 }
 
 
@@ -1664,7 +1669,7 @@ f32 chrGetArmor(ChrRecord *chr)
 }
 
 
-PropRecord *init_GUARDdata_with_set_values(PropRecord *arg0, Model *arg1, struct coord3d *arg2, f32 arg3, StandTile *arg4, struct AIListRecord *arg5)
+PropRecord *init_GUARDdata_with_set_values(PropRecord *arg0, Model *arg1, struct coord3d *arg2, f32 arg3, StandTile *arg4, AIRecord *arg5)
 {
     ChrRecord *var_s0;
     s32 var_v0;
@@ -1688,7 +1693,7 @@ PropRecord *init_GUARDdata_with_set_values(PropRecord *arg0, Model *arg1, struct
     arg0->pos.f[2] = arg2->f[2];
     arg0->stan = arg4;
 
-    sub_GAME_7F06FF5C(arg1, (s32) sub_GAME_7F01FC10);
+    sub_GAME_7F06FF5C(arg1, (intptr_t) sub_GAME_7F01FC10);
 
     arg1->unk00 = 0xA;
     arg1->chr = var_s0;
@@ -1799,7 +1804,7 @@ PropRecord *init_GUARDdata_with_set_values(PropRecord *arg0, Model *arg1, struct
 /**
  * Address 0x7F0203B8.
  */
-PropRecord * chrAllocate( Model * arg0, coord3d * arg1, f32 arg2,  StandTile * arg3, s32 arg4)
+PropRecord * chrAllocate( Model * arg0, coord3d * arg1, f32 arg2,  StandTile * arg3, AIRecord *arg4)
 {
     PropRecord * ret;
     s32 phi_a0;
@@ -2618,7 +2623,7 @@ after_position_update:
         }
 #endif
 
-        g_ModelJointPositionedFunc = chrHandleJointPositioned;
+        g_ModelJointPositionedFunc = (void (*)(s32, Mtxf *))chrHandleJointPositioned;
         g_CurModelChr = chr;
 
         renderdata.basemtx = camGetWorldToScreenMtxf();
@@ -3387,9 +3392,13 @@ after_opcode:
         paintval += 50;
     }
 
+#ifdef GE_NATIVE_64
+    relatednode = portModelCollisionNode(&((ModelRoData_DisplayList_CollisionRecord *)node)->CollisionVertices[bestindex]);
+#else
     relatednode = (ModelNode *) ((ModelRoData_DisplayList_CollisionRecord *) node)->CollisionVertices[bestindex].CollisionRelatedNode;
+#endif
 
-    if (((ModelRoData_DisplayList_CollisionRecord *) node)->CollisionVertices[bestindex].CollisionRelatedNode != NULL)
+    if (relatednode != NULL)
     {
         relatedrodata = &relatednode->Data->DisplayListCollisions;
         relatedrwdata = (ModelRwData_DisplayList_CollisionRecord *) modelGetNodeRwData(model, relatednode);

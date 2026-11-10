@@ -306,7 +306,7 @@ extern s32 spectrum_related_flag;
 extern s32 is_emulating_spectrum;
 extern s32 is_cheat_menu_available;
 extern u8 * ptr_logo_and_walletbond_DL;
-extern s32 ptr_menu_videobuffer;
+extern intptr_t ptr_menu_videobuffer;
 extern  Model * walletinst[];
 extern Lights1 gelogolight;
 extern Lights1 ninlogolight;
@@ -357,5 +357,13 @@ Gfx * menu_jump_constructor_handler(Gfx *DL);
 void unlock_all_mp_chars(void);
 u8 get_player_mp_char_gender(int player);
 s32 pull_and_display_text_for_folder_a0(s32 arg0);
+
+
+u32 get_player_control_style(s32 playernum);
+u16 get_player_mp_char_head(s32 player);
+u16 get_player_mp_char_body(s32 player);
+u16 *frontGetPlayersFavoriteWeaponInHand(int player,int hand);
+s32 get_players_team_or_scenario_item_flag(int player);
+void set_players_team_or_scenario_item_flag(int player,s32 flag);
 
 #endif

@@ -4,4 +4,7 @@
 
 void alloc_shattered_window_pieces(void);
 
+
+void cleanup_window_pieces(void);
+
 #endif
