@@ -320,6 +320,30 @@ static void convNode(struct mconv *c, u32 nodeoff, u32 dataoff, u32 opcode)
  * on the node's own 24 bytes. mirrors modelPromoteNodeOffsetsToPointers'
  * reachability (Child / Next, with LOD->Affects and SWITCH->Controls). */
 #define MSTACK 4096
+/* The walker reads some records before convNode can validate them. */
+static u32 modelRecordSize(u32 opcode)
+{
+    switch (opcode) {
+    case MODELNODE_OPCODE_HEADER: case MODELNODE_OPCODE_OP20: return 16;
+    case MODELNODE_OPCODE_GROUP: case MODELNODE_OPCODE_OP03: case MODELNODE_OPCODE_OP17: return 28;
+    case MODELNODE_OPCODE_DL: return 20;
+    case MODELNODE_OPCODE_DLCOLLISION: return 32;
+    case MODELNODE_OPCODE_DLPRIMARY: case MODELNODE_OPCODE_LOD: return 16;
+    case MODELNODE_OPCODE_BSP: return 36;
+    case MODELNODE_OPCODE_BBOX: case MODELNODE_OPCODE_INTERLINK: return 28;
+    case MODELNODE_OPCODE_GUNFIRE: return 40;
+    case MODELNODE_OPCODE_SHADOW: return 32;
+    case MODELNODE_OPCODE_SWITCH: return 8;
+    case MODELNODE_OPCODE_OP06: return 24;
+    case MODELNODE_OPCODE_GROUPSIMPLE: return 20;
+    case MODELNODE_OPCODE_HEAD: return 4;
+    case MODELNODE_OPCODE_OP11: return 76;
+    case MODELNODE_OPCODE_OP05: return 424;
+    case MODELNODE_OPCODE_OP07: return 432;
+    default: return 0;
+    }
+}
+
 static void walk(struct mconv *c, u32 root)
 {
     u32 stack[MSTACK];
@@ -339,13 +363,22 @@ static void walk(struct mconv *c, u32 root)
             c->bad++;
             continue;
         }
-        if (off + 24 > c->size || c->done[off]) {
+        if (off > c->size || 24 > c->size - off) {
+            c->bad++;
+            continue;
+        }
+        if (c->done[off]) {
             continue;
         }
         opcode = be16(c->d + off) & 0xff;
         dataoff = segoff(c->d + off + 0x4);   /* Data */
         nxt = segoff(c->d + off + 0xc);       /* Next */
         child = segoff(c->d + off + 0x14);    /* Child */
+        if (dataoff != 0xFFFFFFFFu &&
+                (dataoff > c->size || modelRecordSize(opcode) > c->size - dataoff)) {
+            c->bad++;
+            continue;
+        }
         /* LOD/SWITCH descend through the rodata target, not Child */
         if (opcode == MODELNODE_OPCODE_LOD && dataoff != 0xFFFFFFFFu) {
             child = segoff(c->d + dataoff + 0x8);   /* Affects */
