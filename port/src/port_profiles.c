@@ -56,12 +56,9 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
-#ifdef _WIN32
-#include <direct.h> /* _mkdir */
-#endif
 #include <ultra64.h>
 
-extern const char *portRootPath(const char *name); /* main.c: <exe dir>/name */
+#include "port_paths.h"   /* portDataPath: profiles follow the layout */
 extern void portConLogf(const char *fmt, ...);       /* port_console.c */
 extern s32 portVideoIniSetKey(const char *key, const char *value);
 
@@ -118,74 +115,44 @@ s32 portProfileNameMax(void)
 
 static void profEnsureDir(void)
 {
-    static const char *const dirs[] = { "Data", PROFILE_DIR };
-    s32 i;
-
-    for (i = 0; i < 2; i++)
-    {
-        const char *path = portRootPath(dirs[i]);
-        struct stat st;
-
-        if (stat(path, &st) == 0)
-        {
-            continue;
-        }
-#ifdef _WIN32
-        if (_mkdir(path) == 0)
-#else
-        if (mkdir(path, 0755) == 0)
-#endif
-        {
-            portConLogf("ge: profiles: created %s\n", path);
-        }
-    }
+    portEnsureDir(portDataPath(PROFILE_DIR));
 }
 
 /**
- * Move every file in `olddir` (exe-relative) ending in ext1 or ext2 (NULL =
- * none) into `newdir`, creating it (and Data/) if needed; a name already in
- * `newdir` is left where it was, so nothing is overwritten. It lives here
- * because this file has the dirent setup (the large-file define must precede
- * every include); input_pc.c's Devices/ uses it too. Returns how many moved.
+ * Move every file in `olddir` ending in ext1 or ext2 (NULL = none) into
+ * `newdir`, creating it if needed; a name already in `newdir` is left where it
+ * was, so nothing is overwritten. It lives here because this file has the
+ * dirent setup (the large-file define must precede every include); input_pc.c's
+ * Devices/ uses it too. Returns how many moved.
+ *
+ * Both names are data-dir relative, so in a package install they resolve to
+ * the same folder and there is nothing to migrate.
  */
 s32 portDataMigrate(const char *olddir, const char *newdir, const char *ext1, const char *ext2)
 {
+    char oldpath[PORT_PATH_MAX];
     DIR *d;
     struct dirent *de;
     s32 moved = 0;
 
-    d = opendir(portRootPath(olddir));
+    snprintf(oldpath, sizeof(oldpath), "%s", portDataPath(olddir));
+    if (strcmp(oldpath, portDataPath(newdir)) == 0)
+    {
+        return 0;
+    }
+    d = opendir(oldpath);
     if (d == NULL)
     {
         return 0;
     }
-    {   /* Data, then newdir */
-        const char *dirs[2];
-        s32 i;
-
-        dirs[0] = "Data";
-        dirs[1] = newdir;
-        for (i = 0; i < 2; i++)
-        {
-            const char *path = portRootPath(dirs[i]);
-            struct stat st;
-
-            if (stat(path, &st) != 0)
-            {
-#ifdef _WIN32
-                _mkdir(path);
-#else
-                mkdir(path, 0755);
-#endif
-            }
-        }
-    }
+    portEnsureDir(portDataPath("Data"));
+    portEnsureDir(portDataPath(newdir));
     while ((de = readdir(d)) != NULL)
     {
         const size_t len = strlen(de->d_name);
         const size_t l1 = (ext1 != NULL) ? strlen(ext1) : 0;
         const size_t l2 = (ext2 != NULL) ? strlen(ext2) : 0;
-        char from[1024], to[1024], rel[512];
+        char from[PORT_PATH_MAX], to[PORT_PATH_MAX], rel[512];
         struct stat st;
 
         if (!((l1 > 0 && len > l1 && strcmp(de->d_name + len - l1, ext1) == 0)
@@ -198,9 +165,9 @@ s32 portDataMigrate(const char *olddir, const char *newdir, const char *ext1, co
             continue;
         }
         snprintf(rel, sizeof(rel), "%s/%s", olddir, de->d_name);
-        snprintf(from, sizeof(from), "%s", portRootPath(rel));
+        snprintf(from, sizeof(from), "%s", portDataPath(rel));
         snprintf(rel, sizeof(rel), "%s/%s", newdir, de->d_name);
-        snprintf(to, sizeof(to), "%s", portRootPath(rel));
+        snprintf(to, sizeof(to), "%s", portDataPath(rel));
         if (stat(to, &st) != 0 && rename(from, to) == 0)
         {
             portConLogf("ge: moved %s/%s into %s\n", olddir, de->d_name, newdir);
@@ -242,7 +209,7 @@ void portProfileRescan(void)
 
     portProfileMigrate();
     sCount = 0;
-    d = opendir(portRootPath(PROFILE_DIR));
+    d = opendir(portDataPath(PROFILE_DIR));
     if (d == NULL)
     {
         return;   /* no folder yet = no profiles; the first save makes it */
@@ -400,7 +367,7 @@ s32 portProfileDelete(s32 player, const char *name)
         return 0;
     }
     snprintf(rel, sizeof(rel), PROFILE_DIR "/%s.gestats", name);
-    remove(portRootPath(rel));   /* its MP stats go with it (none yet is fine) */
+    remove(portDataPath(rel));   /* its MP stats go with it (none yet is fine) */
     portConLogf("ge: profiles: deleted %s\n", name);
     sCount = -1;
     return 1;
@@ -446,7 +413,7 @@ static const char *profPath(const char *name)
 
     portProfileMigrate();
     snprintf(rel, sizeof(rel), PROFILE_DIR "/%s" PROFILE_EXT, name);
-    return portRootPath(rel);
+    return portDataPath(rel);
 }
 
 /* A name the keyboard could have typed, tidied: no leading or trailing space,

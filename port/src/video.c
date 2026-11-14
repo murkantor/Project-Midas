@@ -29,6 +29,7 @@
 #endif
 #include "game/frametiming.h"   /* portTickSetHz: [display] tickhz */
 #include "romdata.h"            /* romdataIsIniKey: [data] keys are not "unknown controls" */
+#include "port_paths.h"         /* portCfgFopen: midas.ini follows the layout */
 
 /* port_console.c: same output as the fprintf(stderr, ...) this replaced,
  * plus a silent copy in the tilde console ring (spec section 7). */
@@ -1710,10 +1711,11 @@ s32 portVideoOptionSet(const char *key, s32 value)
 
 /* ==== keyboard -> N64 pad (midas.ini) =======================================
  *
- * Bindings live in midas.ini next to the exe, section [controls]: one line per
- * N64 control, value = up to 4 comma-separated SDL key names (the strings
- * SDL_GetScancodeName returns: "W", "Up", "Space", "Return", "Keypad Enter",
- * "Left Shift"...; the comma key is "Comma" / "Keypad Comma", sSepKeyNames).
+ * Bindings live in midas.ini (port_paths.c says where that is), section
+ * [controls]: one line per N64 control, value = up to 4 comma-separated SDL
+ * key names (the strings SDL_GetScancodeName returns: "W", "Up", "Space",
+ * "Return", "Keypad Enter", "Left Shift"...; the comma key is "Comma" /
+ * "Keypad Comma", sSepKeyNames).
  * Scancodes, not keycodes - WASD stays the same physical
  * cluster on any keyboard layout. A missing midas.ini is written out with the
  * defaults below so the user has a file to edit; a present-but-empty value
@@ -2205,8 +2207,7 @@ static void iniParseKeys(int bind, char *value)
 
 static void videoWriteDefaultIni(void)
 {
-    extern FILE *portRootFopen(const char *name, const char *mode);
-    FILE *f = portRootFopen("midas.ini", "w");
+    FILE *f = portCfgFopen("midas.ini", "w");
 
     if (f == NULL)
     {
@@ -2594,7 +2595,6 @@ s32 portVideoIniFresh(void)
 
 static int videoIniWriteKeys(const char *section, const char *const *keys, const char *const *vals, int n, int create)
 {
-    extern FILE *portRootFopen(const char *name, const char *mode);
     int seen[VIDEO_INI_MAX_KEYS];
     char **lines;
     int nlines = 0;
@@ -2640,7 +2640,7 @@ static int videoIniWriteKeys(const char *section, const char *const *keys, const
         return 0;
     }
 
-    f = portRootFopen("midas.ini", "r");
+    f = portCfgFopen("midas.ini", "r");
     if (f == NULL)
     {
         /* only a file that never existed may be created from scratch -
@@ -2779,7 +2779,7 @@ static int videoIniWriteKeys(const char *section, const char *const *keys, const
         }
         if (hadsection)
         {
-            f = portRootFopen("midas.ini", "w");
+            f = portCfgFopen("midas.ini", "w");
             if (f != NULL)
             {
                 int ok = 1;
@@ -2885,7 +2885,7 @@ void portVideoKbmBindsAppend(FILE *f)
  * binds are on disk. */
 static int videoKbmBindsSave(void)
 {
-    char path[1200];
+    char path[PORT_PATH_MAX];
     char line[256];
     char *lines[VIDEO_KBM_MAX_LINES];
     int nlines = 0;
@@ -2984,7 +2984,7 @@ static int videoApplyBindLine(const char *key, char *value, int *moveUpgraded)
 /** Reads the record's [binds] section over the live binds. 1 = it had one. */
 static int videoKbmBindsLoad(int *moveUpgraded)
 {
-    char path[1200];
+    char path[PORT_PATH_MAX];
     char line[256];
     int inbinds = 0;
     int found = 0;
@@ -3089,7 +3089,6 @@ static int videoPortBindNewDefaults(void)
 /** Removes a whole section (header to the next header) from midas.ini. */
 static void videoIniDropSection(const char *section)
 {
-    extern FILE *portRootFopen(const char *name, const char *mode);
     char line[256];
     char **lines;
     int nlines = 0;
@@ -3102,7 +3101,7 @@ static void videoIniDropSection(const char *section)
         return;
     }
     lines = (char **) SDL_calloc(VIDEO_INI_MAX_LINES, sizeof(char *));
-    if (lines == NULL || (f = portRootFopen("midas.ini", "r")) == NULL)
+    if (lines == NULL || (f = portCfgFopen("midas.ini", "r")) == NULL)
     {
         SDL_free(lines);
         return;
@@ -3135,7 +3134,7 @@ static void videoIniDropSection(const char *section)
         SDL_free(lines[0]);
         SDL_memmove(lines, lines + 1, (size_t) --nlines * sizeof(char *));
     }
-    f = portRootFopen("midas.ini", "w");
+    f = portCfgFopen("midas.ini", "w");
     if (f != NULL)
     {
         for (i = 0; i < nlines; i++)
@@ -3192,7 +3191,6 @@ static void videoBindToText(const SDL_Scancode *codes, char *buf, int len); /* b
 
 static void videoLoadConfig(void)
 {
-    extern FILE *portRootFopen(const char *name, const char *mode);
     FILE *f;
     char line[256];
     char defbuf[64];
@@ -3216,7 +3214,7 @@ static void videoLoadConfig(void)
         videoParseBindValue(defbuf, sPortBindings[i], portJoyPortBindName(i));
     }
 
-    f = portRootFopen("midas.ini", "r");
+    f = portCfgFopen("midas.ini", "r");
     if (f == NULL)
     {
         s_IniFresh = 1;   /* a fresh install (input_pc.c starts player 1's device records) */
@@ -3950,8 +3948,7 @@ s32 portVideoIniGetKey(const char *key, char *buf, s32 n)
          * padN_style / layout / inputmode, p1_view, playerN_profile, the
          * backend switches...) has no integer getter - answer with the line
          * midas.ini holds, which is what `set` just wrote */
-        extern FILE *portRootFopen(const char *name, const char *mode);
-        FILE *f = portRootFopen("midas.ini", "r");
+        FILE *f = portCfgFopen("midas.ini", "r");
         char line[256];
         s32 found = 0;
 
@@ -4768,14 +4765,13 @@ void videoGetPad(OSContPad *pad)
  * let the game write loses every change without a word. Say so once at start. */
 static void videoIniWritableCheck(void)
 {
-    extern FILE *portRootFopen(const char *name, const char *mode);
     FILE *f;
 
     if (getenv("GE_WINDOW") != NULL || getenv("GE_NOINISAVE") != NULL)
     {
         return; /* harness runs never write the ini */
     }
-    f = portRootFopen("midas.ini", "a");
+    f = portCfgFopen("midas.ini", "a");
     if (f != NULL)
     {
         fclose(f);

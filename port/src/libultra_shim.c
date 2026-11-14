@@ -25,10 +25,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-#include <sys/stat.h> /* stat / mkdir: Data/Saves for eeprom.bin */
-#ifdef _WIN32
-#include <direct.h>   /* _mkdir */
-#endif
 /* No <stdarg.h> here: the repo's include/stdarg.h wrapper defines its guard
  * during glibc stdio.h's __need___va_list probe, so a later full include is
  * skipped and va_start never appears. osSyncPrintf uses __builtin_va_* -
@@ -37,6 +33,7 @@
 #include <ultra64.h>
 #include "libultra/io/controller.h" /* OSPifRam + the __osCont/__osSi internal API */
 #include "port_libultra.h"
+#include "port_paths.h" /* portDataPath/portExePath: Data/Saves follows the layout */
 #include "game/file.h"  /* save_data / smallSave: EEPROM import from big-endian saves */
 
 /* port_console.c: same output as the fprintf(stderr, ...) this replaced,
@@ -1464,7 +1461,7 @@ u8 __osContAddressCrc(u16 addr)
  * rewritten whole (512 bytes) after every write. A missing or short file
  * behaves as a blank cart (the save checksum fails and defaults are
  * re-initialized); an old ./eeprom.bin is moved into Data/Saves on the first
- * load that finds none there. */
+ * load that finds none there (a package install has no such file). */
 #define PORT_EEPROM_DIR  "Data/Saves"
 #define PORT_EEPROM_FILE PORT_EEPROM_DIR "/eeprom.bin"
 #define PORT_EEPROM_OLD  "eeprom.bin"   /* where older builds kept it (next to the exe) */
@@ -1523,29 +1520,37 @@ static void eepromImportN64(void)
 
 static void eepromEnsureDir(void)
 {
-    extern const char *portRootPath(const char *name);
-    static const char *const dirs[] = { "Data", PORT_EEPROM_DIR };
-    int i;
+    portEnsureDir(portDataPath(PORT_EEPROM_DIR));
+}
 
-    for (i = 0; i < 2; i++) {
-        char path[1024];
-        struct stat st;
+/* An old ./eeprom.bin next to the exe moves into Data/Saves on the first load
+ * that finds none there. A package install has no such file, so it returns
+ * NULL at once. */
+static FILE *eepromOpenLegacy(void)
+{
+    char from[PORT_PATH_MAX];
+    FILE *f;
 
-        snprintf(path, sizeof(path), "%s", portRootPath(dirs[i]));
-        if (stat(path, &st) != 0) {
-#ifdef _WIN32
-            _mkdir(path);
-#else
-            mkdir(path, 0755);
-#endif
-        }
+    if (!portLegacyFiles()) {
+        return NULL;
     }
+    f = fopen(portExePath(PORT_EEPROM_OLD), "rb");
+    if (f == NULL) {
+        return NULL;
+    }
+    fclose(f);
+    eepromEnsureDir();
+    snprintf(from, sizeof(from), "%s", portExePath(PORT_EEPROM_OLD));
+    if (rename(from, portDataPath(PORT_EEPROM_FILE)) == 0) {
+        portConLogf("ge: eeprom: moved %s to %s\n", from, portDataPath(PORT_EEPROM_FILE));
+        return portDataFopen(PORT_EEPROM_FILE, "rb");
+    }
+    portConLogf("ge: eeprom: could not move %s into %s - reading it there\n", from, PORT_EEPROM_DIR);
+    return fopen(from, "rb");   /* the first save then writes the new place */
 }
 
 static void eepromLoad(void)
 {
-    extern FILE *portRootFopen(const char *name, const char *mode);
-    extern const char *portRootPath(const char *name);
     static int loaded;
     FILE *f;
 
@@ -1553,21 +1558,9 @@ static void eepromLoad(void)
         return;
     }
     loaded = 1;
-    f = portRootFopen(PORT_EEPROM_FILE, "rb");
-    if (f == NULL && (f = portRootFopen(PORT_EEPROM_OLD, "rb")) != NULL) {
-        /* the pre-Data/Saves file: move it, so the next save lands beside it */
-        char from[1024];
-
-        fclose(f);
-        eepromEnsureDir();
-        snprintf(from, sizeof(from), "%s", portRootPath(PORT_EEPROM_OLD));
-        if (rename(from, portRootPath(PORT_EEPROM_FILE)) == 0) {
-            portConLogf("ge: eeprom: moved %s to %s\n", from, portRootPath(PORT_EEPROM_FILE));
-            f = portRootFopen(PORT_EEPROM_FILE, "rb");
-        } else {
-            portConLogf("ge: eeprom: could not move %s into %s - reading it there\n", from, PORT_EEPROM_DIR);
-            f = portRootFopen(PORT_EEPROM_OLD, "rb");   /* the first save then writes the new place */
-        }
+    f = portDataFopen(PORT_EEPROM_FILE, "rb");
+    if (f == NULL) {
+        f = eepromOpenLegacy();
     }
     if (f != NULL) {
         size_t n = fread(sEeprom, 1, sizeof(sEeprom), f);
@@ -1581,18 +1574,16 @@ static void eepromLoad(void)
 
 static void eepromFlush(void)
 {
-    extern FILE *portRootFopen(const char *name, const char *mode);
-    extern const char *portRootPath(const char *name);
     FILE *f;
 
     eepromEnsureDir();
-    f = portRootFopen(PORT_EEPROM_FILE, "wb");
+    f = portDataFopen(PORT_EEPROM_FILE, "wb");
     if (f == NULL) {
         static int warned;
         if (!warned) {
             warned = 1;
             portConLogf("ge: cannot write %s - saves are memory-only\n",
-                    portRootPath(PORT_EEPROM_FILE));
+                    portDataPath(PORT_EEPROM_FILE));
         }
         return;
     }

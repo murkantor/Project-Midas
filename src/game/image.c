@@ -2656,7 +2656,7 @@ void texLoad(s32 *updateword, struct texpool *pool)
                * splits loader-vs-renderer for corrupt textures (F2.5 blue Depot
                * floor hunt). */
                 extern char *getenv(const char *);
-                extern void *portRootFopen(const char *name, const char *mode);
+                extern void *portDataFopen(const char *name, const char *mode);
                 extern u32 fwrite(const void *, u32, u32, void *);
                 extern s32 fclose(void *);
                 extern int sprintf(char *, const char *, ...);
@@ -2684,7 +2684,7 @@ void texLoad(s32 *updateword, struct texpool *pool)
                     char name[64];
                     void *f;
                     sprintf(name, "tex_%d.bin", (s32) g_TexNumToLoad);
-                    f = portRootFopen(name, "wb");
+                    f = portDataFopen(name, "wb");
                     if (f != NULL)
                     {
                         fwrite(pool->leftpos, 1, bytesout, f);

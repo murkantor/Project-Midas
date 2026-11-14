@@ -27,10 +27,10 @@
 #include <ultra64.h>
 #include <bondconstants.h>   /* GAMEMODE - the real enum, not a copy */
 #include "port_mpstats.h"
+#include "port_paths.h"   /* portDataPath: stats follow the layout */
 
 #define MPSTATS_VERSION 2   /* v2 added damage_dealt / damage_taken / award_NN */
 
-extern const char *portRootPath(const char *name);   /* main.c */
 extern void portConLogf(const char *fmt, ...);         /* port_console.c */
 extern const char *portProfileActive(s32 player);      /* port_profiles.c */
 extern s32 get_is_ramrom_flag(void);                   /* ramromreplay.c */
@@ -92,7 +92,7 @@ static const char *statsPath(const char *name)
         portProfileMigrate();
     }
     snprintf(rel, sizeof(rel), "Data/Profiles/%s.gestats", name);
-    return portRootPath(rel);
+    return portDataPath(rel);
 }
 
 void portMpStatsLoad(const char *name, s32 out[PORT_MPSTAT_COUNT])

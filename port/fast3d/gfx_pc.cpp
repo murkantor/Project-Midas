@@ -1435,7 +1435,8 @@ static void gfx_dxlu_draw(void) {
  * on, gfx_shader_prewarm_step compiles the listed ones a few ms per frame
  * from boot, so the front end pays for them instead of gameplay. A filter
  * change clears the pool and restarts the walk. */
-extern "C" const char* portRootPath(const char* name); /* main.c */
+extern "C" const char* portDataPath(const char* name);  /* port_paths.c: user files */
+extern "C" const char* portSharePath(const char* name); /* port_paths.c: shipped files */
 extern "C" unsigned long long portProfNow(void);        /* pcsched.c */
 static std::vector<std::pair<uint64_t, uint32_t>> ge_prewarm_ids;
 static std::set<std::pair<uint64_t, uint32_t>> ge_prewarm_known;
@@ -1448,13 +1449,23 @@ static void gfx_shader_prewarm_load(void) {
     if (!ge_prewarm_on) {
         return;
     }
-    /* shaders_base.txt ships with the release (every stage, MP and the
-     * attract demos, recorded by scripts/port/record_shaders.sh) and is never
-     * written; shaders.txt is this install's own list */
-    static const char* const files[] = { "Data/shaders_base.txt", "Data/shaders.txt" };
-    unsigned counts[2] = { 0, 0 };
-    for (int k = 0; k < 2; k++) {
-        FILE* f = fopen(portRootPath(files[k]), "r");
+    struct ShaderListFile {
+        const char* name;
+        bool shipped;
+    };
+    /* shaders_base.txt ships with the release (every stage, MP and the attract
+     * demos, recorded by scripts/port/record_shaders.sh) and is never written;
+     * shaders.txt is this install's own list */
+    static const ShaderListFile files[] = {
+        { "Data/shaders_base.txt", true },
+        { "Data/shaders.txt", false },
+    };
+    const size_t nfiles = sizeof(files) / sizeof(files[0]);
+    unsigned counts[sizeof(files) / sizeof(files[0])] = { 0 };
+    for (size_t k = 0; k < nfiles; k++) {
+        const char* path = files[k].shipped ? portSharePath(files[k].name)
+                                            : portDataPath(files[k].name);
+        FILE* f = fopen(path, "r");
         if (f == NULL) {
             continue;
         }
@@ -1479,7 +1490,7 @@ static void gfx_shader_prewarm_record(uint64_t shader_id0, uint32_t shader_id1) 
     if (ge_prewarm_on != 1 || !ge_prewarm_known.insert(std::make_pair(shader_id0, shader_id1)).second) {
         return;
     }
-    FILE* f = fopen(portRootPath("Data/shaders.txt"), "a");
+    FILE* f = fopen(portDataPath("Data/shaders.txt"), "a");
     if (f != NULL) {
         fprintf(f, "%016llx %08x\n", (unsigned long long)shader_id0, (unsigned)shader_id1);
         fclose(f);

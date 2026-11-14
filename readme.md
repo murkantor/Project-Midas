@@ -35,6 +35,45 @@ Files next to the executable:
 
 An older `ge.ini` is renamed to `midas.ini` automatically on first run.
 
+### Linux distribution packages
+
+The default Linux build is the portable one above: every file lives next to the
+executable. A distro package needs the opposite - a read-only prefix (its
+`/usr`, the Nix store) plus the user's own directories - so that variant is a
+build option, off by default:
+
+```
+cmake -B build_pc -DCMAKE_BUILD_TYPE=Release -DGE_VIDEO=ON -DGE_XDG_PATHS=ON
+cmake --build build_pc -j$(nproc)
+cmake --install build_pc --prefix /usr
+```
+
+`-DGE_XDG_PATHS=ON` (Linux only) makes the game read the files it ships
+(`gamecontrollerdb.txt`, `gamecontrollerdefault.txt`, `Data/shaders_base.txt`)
+from `<prefix>/share/project-midas/` (`share/games/project-midas` works too),
+found from its own location plus the install directories CMake records
+(`CMAKE_INSTALL_BINDIR`, `CMAKE_INSTALL_DATADIR`), and keep everything it writes
+in the XDG base directories. The option also adds the `install` rules: a default
+build has none, so `cmake --install` only does something here.
+
+| Path | What it is |
+| --- | --- |
+| `$XDG_CONFIG_HOME/project-midas/midas.ini` | Settings (`~/.config/...` by default). |
+| `$XDG_DATA_HOME/project-midas/` | The cart image, plus `Saves/`, `Profiles/`, `WeaponSets/`, `MatchSettings/`, `Devices/`, `Textures/`, `Logs/`, `shaders.txt` and `gamecontrolleruser.txt`. |
+
+Both XDG bases must be absolute paths: an unset, empty or relative
+`$XDG_CONFIG_HOME` or `$XDG_DATA_HOME` falls back to the matching directory under
+an absolute `$HOME`, and with no absolute `$HOME` either the game exits with an
+error instead of writing somewhere unexpected. Newly created user directories
+are private (`0700`); permissions on existing directories are not changed.
+Files from an exe-relative install are not migrated, so a player switching from
+the default build has to move them by hand.
+
+`python3 scripts/port/test_xdg_paths.py` checks both layouts - where each file
+lands, the prefix discovery and the XDG rules - without the cart or a full
+build. With CMake installed, it also exercises the real install rules using a
+small path probe, including custom install directories and `DESTDIR` staging.
+
 ## Building
 
 The build runs in Docker, which has every tool and library both builds need. You also need the GE (USA) cart as `baserom.u.z64` in the repository root:
@@ -90,7 +129,7 @@ The commands below are for a Linux shell. On Windows, run them in WSL:
 | Windows | `build_win/ProjectMidas.exe` | `SDL2.dll`, the controller files, `Data/` |
 | Linux | `build_pc/ProjectMidas` | the controller files, `Data/` |
 
-To play, put a copy of `baserom.u.z64` in that build's `Data/` folder. On Windows, copy the whole `build_win` folder somewhere in Windows (from WSL: `explorer.exe build_win`) and run `ProjectMidas.exe` there. The Linux build needs 32-bit SDL2 and OpenGL on the machine that runs it. On Ubuntu or Debian:
+To play, put a copy of `baserom.u.z64` in that build's `Data/` folder (with `-DGE_XDG_PATHS=ON`: in `$XDG_DATA_HOME/project-midas/`). On Windows, copy the whole `build_win` folder somewhere in Windows (from WSL: `explorer.exe build_win`) and run `ProjectMidas.exe` there. The Linux build needs 32-bit SDL2 and OpenGL on the machine that runs it. On Ubuntu or Debian:
 
 ```
 sudo dpkg --add-architecture i386

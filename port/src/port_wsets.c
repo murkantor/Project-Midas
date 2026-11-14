@@ -27,11 +27,9 @@
 #include <string.h>
 #include <dirent.h>
 #include <sys/stat.h>
-#ifdef _WIN32
-#include <direct.h>
-#endif
 #include <ultra64.h>
 #include <bondconstants.h>   /* ITEM_UNARMED - the real enum, not a copy */
+#include "port_paths.h"   /* portDataPath: saved sets follow the layout */
 
 #define WSET_DIR      "Data/WeaponSets"   /* formerly ./WeaponSets; old sets are moved here */
 #define WSET_DIR_OLD  "WeaponSets"
@@ -40,7 +38,6 @@
 #define WSET_MAX      50      /* most saved sets listed (Load Set's drop-down scrolls) */
 #define WSET_NAME_MAX 24
 
-extern const char *portRootPath(const char *name);   /* main.c */
 extern void portConLogf(const char *fmt, ...);         /* port_console.c */
 
 static char sNames[WSET_MAX][WSET_NAME_MAX];
@@ -52,7 +49,7 @@ static const char *wsetPath(const char *name)
     char rel[WSET_NAME_MAX + 32];
 
     snprintf(rel, sizeof(rel), WSET_DIR "/%s" WSET_EXT, name);
-    return portRootPath(rel);
+    return portDataPath(rel);
 }
 
 static int wsetNameCmp(const void *a, const void *b)
@@ -62,23 +59,7 @@ static int wsetNameCmp(const void *a, const void *b)
 
 static void wsetEnsureDir(void)
 {
-    static const char *const dirs[] = { "Data", WSET_DIR };
-    s32 i;
-
-    for (i = 0; i < 2; i++)
-    {
-        const char *dir = portRootPath(dirs[i]);
-        struct stat st;
-
-        if (stat(dir, &st) != 0)
-        {
-#ifdef _WIN32
-            _mkdir(dir);
-#else
-            mkdir(dir, 0755);
-#endif
-        }
-    }
+    portEnsureDir(portDataPath(WSET_DIR));
 }
 
 /* sets saved under the old ./WeaponSets folder move into Data/WeaponSets */
@@ -94,7 +75,11 @@ static void wsetMigrate(void)
         return;
     }
     done = 1;
-    d = opendir(portRootPath(WSET_DIR_OLD));
+    if (!portLegacyFiles())
+    {
+        return;   /* a package install: no ./WeaponSets from an older release */
+    }
+    d = opendir(portDataPath(WSET_DIR_OLD));
     if (d == NULL)
     {
         return;
@@ -103,7 +88,7 @@ static void wsetMigrate(void)
     while ((de = readdir(d)) != NULL)
     {
         const size_t len = strlen(de->d_name);
-        char from[1024], to[1024], rel[WSET_NAME_MAX + 48];
+        char from[PORT_PATH_MAX], to[PORT_PATH_MAX], rel[WSET_NAME_MAX + 48];
         struct stat st;
 
         if (len <= extlen || strcmp(de->d_name + len - extlen, WSET_EXT) != 0)
@@ -111,9 +96,9 @@ static void wsetMigrate(void)
             continue;
         }
         snprintf(rel, sizeof(rel), WSET_DIR_OLD "/%s", de->d_name);
-        snprintf(from, sizeof(from), "%s", portRootPath(rel));
+        snprintf(from, sizeof(from), "%s", portDataPath(rel));
         snprintf(rel, sizeof(rel), WSET_DIR "/%s", de->d_name);
-        snprintf(to, sizeof(to), "%s", portRootPath(rel));
+        snprintf(to, sizeof(to), "%s", portDataPath(rel));
         if (stat(to, &st) != 0 && rename(from, to) == 0)
         {
             portConLogf("ge: wsets: moved %s into %s\n", de->d_name, WSET_DIR);
@@ -131,7 +116,7 @@ void portWsetRescan(void)
 
     wsetMigrate();
     sCount = 0;
-    d = opendir(portRootPath(WSET_DIR));
+    d = opendir(portDataPath(WSET_DIR));
     if (d == NULL)
     {
         return;

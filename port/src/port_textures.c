@@ -57,16 +57,12 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/stat.h>
-#ifdef _WIN32
-#include <direct.h> /* _mkdir */
-#endif
 #include <ultra64.h>
 #include <bondtypes.h>
 #include <PR/gbi.h>
 #include "game/image.h"   /* struct tex, TEXFORMAT_*, PORT_TEXTURES_MAX */
 
-extern const char *portRootPath(const char *name); /* main.c: <exe dir>/name */
+#include "port_paths.h"   /* portDataPath: the texture folder follows the layout */
 extern void portConLogf(const char *fmt, ...);       /* port_console.c */
 extern struct sImageTableEntry *crosshairimage;      /* image_bank.c - "crosshair colour", end of file */
 void portTexCrosshairRefresh(s32 reorig);
@@ -107,27 +103,11 @@ struct portExtTex {
 static struct portExtTex sTex[PORT_TEX_MAX];
 static s32 sTexCount;
 
-/* create <exe dir>/rel when missing, so a fresh install shows where the
+/* create <data folder>/rel when missing, so a fresh install shows where the
  * files go - romdata.c does the same for Data itself */
 static void texEnsureDir(const char *rel)
 {
-    const char *path = portRootPath(rel);
-    struct stat st;
-    int rc;
-
-    if (stat(path, &st) == 0)
-    {
-        return;
-    }
-#ifdef _WIN32
-    rc = _mkdir(path);
-#else
-    rc = mkdir(path, 0755);
-#endif
-    if (rc == 0)
-    {
-        portConLogf("ge: textures: created %s\n", path);
-    }
+    portEnsureDir(portDataPath(rel));   /* logs the creation, or why it failed */
 }
 
 static u32 bmpU32(const u8 *p) { return (u32) p[0] | ((u32) p[1] << 8) | ((u32) p[2] << 16) | ((u32) p[3] << 24); }
@@ -269,7 +249,7 @@ static s32 texReadBmpFile(const char *dir, const char *name, s32 maxside, s32 *w
     u8 *file;
 
     snprintf(rel, sizeof(rel), "%s/%s.bmp", dir, name);
-    path = portRootPath(rel);
+    path = portDataPath(rel);
     f = fopen(path, "rb");
     if (f == NULL)
     {

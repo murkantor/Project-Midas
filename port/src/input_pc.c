@@ -31,6 +31,7 @@
 
 #include <SDL.h>
 #include "port_console.h" /* the tilde console: fixed keys feed it below */
+#include "port_paths.h"    /* portDataPath/portSharePath: user files vs shipped */
 static const char *inputDevRecPath(const char *id);   /* per-device records, below */
 
 #define INPUT_MAX_PADS 4
@@ -2058,14 +2059,13 @@ static void inputBackendHints(void)
     SDL_SetHint(SDL_HINT_XINPUT_ENABLED, s_OptXInput ? "1" : "0");
 }
 
-/* SDL_GameControllerAddMappingsFromFile decodes its path as UTF-8 but
- * portRootPath is ANSI, so non-ASCII install folders silently loaded nothing;
+/* SDL_GameControllerAddMappingsFromFile decodes its path as UTF-8 but the
+ * game's paths are ANSI, so non-ASCII install folders silently loaded nothing;
  * open the file the way midas.ini is opened and hand SDL the bytes (-2 = no file,
  * else SDL's answer, -1 = parse failure). */
 static int inputLoadMappingDb(void)
 {
-    extern FILE *portRootFopen(const char *name, const char *mode);
-    FILE *f = portRootFopen("gamecontrollerdb.txt", "rb");
+    FILE *f = fopen(portSharePath("gamecontrollerdb.txt"), "rb");
     char *buf = NULL;
     long len = 0;
     int n = -1;
@@ -2144,7 +2144,7 @@ void portInputInit(void)
      * at boot, not whenever player 1's device first changes */
     (void) inputDevRecPath("kbm");
 
-    /* Optional community mapping database next to the exe. */
+    /* Optional community mapping database, shipped with the game. */
     {
         int n = inputLoadMappingDb();   /* (UTF-8-safe path, see inputLoadMappingDb) */
         if (n > 0)
@@ -2653,15 +2653,13 @@ static void inputLoadLayoutFile(const char *path, int isUser);
 
 static void inputLoadLayouts(void)
 {
-    extern const char *portRootPath(const char *name);
-
     s_LayoutCount = 0;
-    inputLoadLayoutFile(portRootPath(LAYOUT_USER_FILE), 1);
+    inputLoadLayoutFile(portDataPath(LAYOUT_USER_FILE), 1);
     if (s_LayoutCount >= LAYOUT_USER_MAX)
     {
         portConLogf("ge: input: %s: only the first %d saved layouts are loaded\n", LAYOUT_USER_FILE, LAYOUT_USER_MAX);
     }
-    inputLoadLayoutFile(portRootPath("gamecontrollerdefault.txt"), 0);
+    inputLoadLayoutFile(portSharePath("gamecontrollerdefault.txt"), 0);
     portConLogf("ge: input: %d layout(s) available\n", s_LayoutCount);
 }
 
@@ -2675,7 +2673,7 @@ static void inputLoadLayoutFile(const char *path, int isUser)
     {
         if (!isUser)
         {
-            portConLogf("ge: input: no gamecontrollerdefault.txt next to the exe - built-in Xbox layout only\n");
+            portConLogf("ge: input: no gamecontrollerdefault.txt installed - built-in Xbox layout only\n");
         }
         return;
     }
@@ -5023,7 +5021,6 @@ static int inputDevRecWritable(void)
 
 static const char *inputDevRecPath(const char *id)
 {
-    extern const char *portRootPath(const char *path);
     extern s32 portDataMigrate(const char *olddir, const char *newdir, const char *ext1, const char *ext2);
     static int s_Migrated;
     char rel[96];
@@ -5035,7 +5032,7 @@ static const char *inputDevRecPath(const char *id)
     }
 
     SDL_snprintf(rel, sizeof(rel), DEVREC_DIR "/%s" DEVREC_EXT, id);
-    return portRootPath(rel);
+    return portDataPath(rel);
 }
 
 /* 1 = the slot holds a device, id and name filled; 0 = it is empty, and
@@ -5111,33 +5108,12 @@ static void inputDevRecPadGet(int slot, const char *key, char *buf, int n)
     }
 }
 
-/* declared here, not included: sys/stat.h drags the C library's string.h in
- * over the port's own (include/string.h) and the build stops */
-#ifdef _WIN32
-extern int _mkdir(const char *path);
-#else
-extern int mkdir(const char *path, unsigned int mode);
-#endif
-
+/* port_paths.h's portEnsureDir keeps sys/stat.h out of this file: it drags the
+ * C library's string.h in over the port's own (include/string.h) and the build
+ * stops. */
 static void inputDevRecEnsureDir(void)
-{   /* fails harmlessly once it exists, so it says so only the first time */
-    extern const char *portRootPath(const char *path);
-    const char *path;
-
-#ifdef _WIN32
-    _mkdir(portRootPath("Data"));
-#else
-    mkdir(portRootPath("Data"), 0755);
-#endif
-    path = portRootPath(DEVREC_DIR);
-#ifdef _WIN32
-    if (_mkdir(path) == 0)
-#else
-    if (mkdir(path, 0755) == 0)
-#endif
-    {
-        portConLogf("ge: devices: created %s\n", path);
-    }
+{   /* says so only the first time, when it has to create the folder */
+    portEnsureDir(portDataPath(DEVREC_DIR));
 }
 
 /* Write the live settings as device `id`'s record. Called for the OUTGOING
@@ -5222,7 +5198,7 @@ const char *portInputKbmRecPath(void)
 {
     (void) inputDevRecPath("kbm");   /* runs the old-folder move first */
     inputDevRecEnsureDir();
-    return inputDevRecPath("kbm");   /* last: both share portRootPath's buffer */
+    return inputDevRecPath("kbm");   /* last: both share portDataPath's buffer */
 }
 
 void portInputDevRecHeader(FILE *f, const char *id)
@@ -5502,7 +5478,6 @@ static void inputP1DeviceSettingsCheck(void)
  */
 s32 portInputLayoutSaveCurrent(s32 dev, const char *name)
 {
-    extern const char *portRootPath(const char *path);
     char want[64];
     char line[1024];
     s32 slot = portInputDeviceSlot(dev);
@@ -5658,7 +5633,7 @@ s32 portInputLayoutSaveCurrent(s32 dev, const char *name)
              * record glued onto it, losing it and giving its bindings to that line */
         int last = '\n';
 
-        f = fopen(portRootPath(LAYOUT_USER_FILE), "rb");
+        f = fopen(portDataPath(LAYOUT_USER_FILE), "rb");
         if (f != NULL)
         {
             if (fseek(f, -1, SEEK_END) == 0)
@@ -5667,7 +5642,7 @@ s32 portInputLayoutSaveCurrent(s32 dev, const char *name)
             }
             fclose(f);
         }
-        f = fopen(portRootPath(LAYOUT_USER_FILE), "a");
+        f = fopen(portDataPath(LAYOUT_USER_FILE), "a");
         if (f == NULL)
         {
             portConLogf("ge: input: could not write %s\n", LAYOUT_USER_FILE);
@@ -5713,7 +5688,6 @@ s32 portInputLayoutSaveCurrent(s32 dev, const char *name)
  */
 s32 portInputLayoutDelete(s32 i)
 {
-    extern const char *portRootPath(const char *path);
     char want[64];
     char *buf = NULL;
     char *line;
@@ -5728,7 +5702,7 @@ s32 portInputLayoutDelete(s32 i)
     SDL_strlcpy(want, s_Layouts[i].name, sizeof(want));
     /* the WHOLE file, comments and blank lines included: a fixed-size line
      * buffer would count those too and drop every layout after them */
-    f = fopen(portRootPath(LAYOUT_USER_FILE), "rb");
+    f = fopen(portDataPath(LAYOUT_USER_FILE), "rb");
     if (f == NULL)
     {
         return 0;
@@ -5745,7 +5719,7 @@ s32 portInputLayoutDelete(s32 i)
     }
     buf[len] = '\0';
     fclose(f);
-    f = fopen(portRootPath(LAYOUT_USER_FILE), "wb");
+    f = fopen(portDataPath(LAYOUT_USER_FILE), "wb");
     if (f == NULL)
     {
         SDL_free(buf);

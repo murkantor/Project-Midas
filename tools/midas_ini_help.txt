@@ -1,18 +1,28 @@
 PROJECT MIDAS - midas.ini HELP
 ==============================
 
-midas.ini is the settings file for Project Midas. It sits next to the game
-executable and holds plain key=value lines in the sections [input],
-[display] and an optional [data]. It has no comments; this file explains
-the keys. Keyboard and mouse binds are kept separately, in
-Data/Devices/kbm.gedevice (see the last section).
+midas.ini is the settings file for Project Midas. It holds plain key=value
+lines in the sections [input], [display] and an optional [data]. It has no
+comments; this file explains the keys. Keyboard and mouse binds are kept
+separately, in kbm.gedevice under the game's data folder (see the last
+section).
+
+Where the game keeps these files depends on the build:
+ - The standard build keeps everything next to the game executable, so
+   midas.ini and the Data folder sit beside it: Data/Devices/kbm.gedevice.
+ - A distribution package (Linux, -DGE_XDG_PATHS=ON) keeps midas.ini in
+   ~/.config/project-midas/ and your saves, binds and profiles in
+   ~/.local/share/project-midas/, with no Data folder: Devices/kbm.gedevice.
+   Logs go there too, under Logs/. XDG_CONFIG_HOME and XDG_DATA_HOME override
+   these defaults when set to absolute paths.
 
  - Most settings can be changed in the in-game menus, which save them here.
  - Edit the files by hand only while the game is closed.
  - Deleting midas.ini restores the default settings (the game writes a new
    one). Your binds are kept.
- - An old ge.ini is renamed to midas.ini automatically on first start, and
-   its [controls] binds move to Data/Devices/kbm.gedevice.
+ - In the standard build, an old ge.ini next to the executable is renamed
+   to midas.ini automatically on first start, and its [controls] binds move
+   to Data/Devices/kbm.gedevice. Packages do not migrate portable files.
  - Switches: 1 = on, 0 = off, unless stated otherwise. Key names are not
    case sensitive.
 
@@ -265,9 +275,11 @@ mipmaps is set by Classic Mode; leave it as it is.
 
   Key  | Default | What it does
   -----+---------+-----------------------------------------------------------
-  rom  | (none)  | Path to your GoldenEye 007 (USA) ROM. A relative path is
-       |         | read from the game's folder. Not needed if the ROM is in
-       |         | the Data folder. See Data/README.txt for the full order.
+  rom  | (none)  | Path to your GoldenEye 007 (USA) ROM. Relative paths are
+       |         | read from the executable's folder in the standard build,
+       |         | or $XDG_DATA_HOME/project-midas/ in a Linux package.
+       |         | Not needed if the ROM is in Data/ (standard build) or
+       |         | the package's user data folder.
 
 
 ==============================================================================

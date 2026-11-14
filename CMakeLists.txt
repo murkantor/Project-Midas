@@ -377,6 +377,30 @@ if(GE_ROMDATA_FALLBACK)
     list(APPEND ASSET_LOOSE_SRC ${ASSET_LOOSE_FALLBACK_SRC})
 endif()
 
+# Linux distribution layout (off by default: the game keeps every file next to
+# the executable, as the releases ship it). ON installs an exe that reads the
+# files it ships from <prefix>/share/project-midas and writes midas.ini, saves
+# and profiles to the XDG base directories, so the package can live in a
+# read-only prefix. Linux only.
+option(GE_XDG_PATHS "Linux package layout: read-only <prefix>/share/project-midas + XDG user files" OFF)
+if(GE_XDG_PATHS AND NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    message(FATAL_ERROR "GE_XDG_PATHS is a Linux package layout (this build targets ${CMAKE_SYSTEM_NAME})")
+endif()
+if(GE_XDG_PATHS)
+    include(GNUInstallDirs)
+    # port_paths.c finds the shipped files from the exe dir, so bake the path
+    # from bindir to datadir instead of assuming the exe sits in <prefix>/bin.
+    # FULL_* keeps this right when a packager passes an absolute bindir.
+    file(RELATIVE_PATH GE_XDG_SHARE_REL
+        "${CMAKE_INSTALL_FULL_BINDIR}" "${CMAKE_INSTALL_FULL_DATADIR}/project-midas")
+    file(RELATIVE_PATH GE_XDG_SHARE_GAMES_REL
+        "${CMAKE_INSTALL_FULL_BINDIR}" "${CMAKE_INSTALL_FULL_DATADIR}/games/project-midas")
+    # Rename GNUInstallDirs' default, but preserve a packager's override.
+    if(CMAKE_INSTALL_DOCDIR STREQUAL "${CMAKE_INSTALL_DATAROOTDIR}/doc/${PROJECT_NAME}")
+        set(CMAKE_INSTALL_DOCDIR "${CMAKE_INSTALL_DATAROOTDIR}/doc/project-midas")
+    endif()
+endif()
+
 if(GE_VIDEO)
     enable_language(CXX)
     set(CMAKE_CXX_STANDARD 20) # gfx_cc.h uses operator<=> (PD builds C++20)
@@ -402,6 +426,13 @@ add_executable(ge ${GAME_SRC} ${ENGINE_SRC} ${GU_SRC} ${PORT_SRC}
 # The executable is named ProjectMidas, but the CMake target stays `ge` so build
 # scripts keep working, and ge_direct.log/Profiles keep their names.
 set_target_properties(ge PROPERTIES OUTPUT_NAME ProjectMidas)
+if(GE_XDG_PATHS)
+    # port_paths.c keys the layout off this; without it every path stays
+    # executable-relative, exactly as before.
+    target_compile_definitions(ge PRIVATE GE_XDG_PATHS=1
+        "GE_XDG_SHARE_REL=\"${GE_XDG_SHARE_REL}\""
+        "GE_XDG_SHARE_GAMES_REL=\"${GE_XDG_SHARE_GAMES_REL}\"")
+endif()
 # The exe's own icon (Explorer, a pinned taskbar entry): port/win/ProjectMidas.ico,
 # generated with the window icon by scripts/port/make_icon.py.
 if(WIN32)
@@ -469,4 +500,23 @@ if(GE_VIDEO)
         COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:ge>/Data
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             ${CMAKE_SOURCE_DIR}/tools/shaders_base.txt $<TARGET_FILE_DIR:ge>/Data/shaders_base.txt)
+endif()
+
+if(GE_XDG_PATHS)
+    # The layout the exe expects: bin/ProjectMidas + share/project-midas/, the
+    # read-only files it ships. The cart goes in the user's own
+    # $XDG_DATA_HOME/project-midas at run time.
+    install(TARGETS ge RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+    install(FILES
+        ${CMAKE_SOURCE_DIR}/tools/gamecontrollerdb.txt
+        ${CMAKE_SOURCE_DIR}/tools/gamecontrollerdefault.txt
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/project-midas)
+    install(FILES ${CMAKE_SOURCE_DIR}/tools/shaders_base.txt
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/project-midas/Data)
+    # reading material for the player, not a file the game opens: the docdir,
+    # and the licenses where distros look for them
+    install(FILES ${CMAKE_SOURCE_DIR}/tools/midas_ini_help.txt
+        DESTINATION ${CMAKE_INSTALL_DOCDIR})
+    install(FILES ${CMAKE_SOURCE_DIR}/LICENSE ${CMAKE_SOURCE_DIR}/tools/THIRD_PARTY_NOTICES.txt
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/licenses/project-midas)
 endif()

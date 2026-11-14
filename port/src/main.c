@@ -12,11 +12,8 @@
 #include <signal.h>
 #include <stdarg.h>
 #include <ultra64.h>
-#ifdef _WIN32
-#include <direct.h>   /* _mkdir: portLogPath */
-#else
-#include <sys/stat.h> /* mkdir: portLogPath */
-#endif
+
+#include "port_paths.h" /* where files live; portLogPath for the crash log */
 
 /* port_console.c: same output as the fprintf(stderr, ...) this replaced,
  * plus a silent copy in the tilde console ring (spec section 7). */
@@ -45,7 +42,6 @@ static int portPtrReadable(const void *p, size_t n)
 /* Crash output tee: a launch with no console (the GUI-subsystem exe) would
  * lose the whole dump. Mirror every crash line into Data/Logs/crash.log
  * (unbuffered, as the process is dying). */
-const char *portLogPath(const char *name);
 static FILE *sCrashLog;
 
 static FILE *crashLogFile(void)
@@ -576,104 +572,6 @@ void ge_dbg_gfxdump(const char *tag, void *gdl, int count)
     fflush(stderr);
 }
 
-/* ==== exe-relative files (Data/Saves/eeprom.bin, midas.ini) =================
- * Consumers: libultra_shim.c (EEPROM persistence), video.c (input config).
- * The directory holding the executable, NOT the cwd, because the game may be
- * launched from Explorer or a shell with any working directory. */
-static char sPortRootDir[1024]; /* with trailing separator; "" = cwd fallback */
-
-#ifndef _WIN32
-#include <unistd.h> /* readlink */
-#endif
-
-static void portInitRootDir(const char *argv0)
-{
-    int last = -1;
-    int i;
-#ifdef _WIN32
-    /* authoritative on Windows regardless of how we were launched */
-    DWORD n = GetModuleFileNameA(NULL, sPortRootDir, sizeof(sPortRootDir) - 1);
-    if (n == 0 || n >= sizeof(sPortRootDir) - 1) {
-        sPortRootDir[0] = '\0';
-        return;
-    }
-    (void) argv0;
-#else
-    /* argv[0] is not authoritative on Linux (PATH launches have no slash,
-     * launchers/symlinks point elsewhere), and a cwd fallback scattered
-     * eeprom.bin/midas.ini across directories. So use /proc/self/exe, the Linux
-     * equivalent of GetModuleFileNameA, and keep argv[0] only as the fallback
-     * for other POSIX. */
-    ssize_t n = readlink("/proc/self/exe", sPortRootDir, sizeof(sPortRootDir) - 1);
-    if (n > 0 && (size_t) n < sizeof(sPortRootDir) - 1) {
-        sPortRootDir[n] = '\0';
-    } else if (argv0 == NULL ||
-        (size_t) snprintf(sPortRootDir, sizeof(sPortRootDir), "%s", argv0) >= sizeof(sPortRootDir)) {
-        sPortRootDir[0] = '\0'; /* no argv0 / overlong: cwd fallback */
-    }
-#endif
-    for (i = 0; sPortRootDir[i] != '\0'; i++) {
-        if (sPortRootDir[i] == '/' || sPortRootDir[i] == '\\') {
-            last = i;
-        }
-    }
-    /* keep the separator; drop the basename. No separator = bare name on
-     * PATH/cwd - fall back to cwd-relative files. */
-    sPortRootDir[last + 1] = '\0';
-
-    /* always-on: log where eeprom.bin/midas.ini actually live this run */
-    portConLogf("ge: root: %s\n", sPortRootDir[0] != '\0' ? sPortRootDir : "(cwd)");
-}
-
-const char *portRootPath(const char *name)
-{
-    static char path[1200];
-    snprintf(path, sizeof(path), "%s%s", sPortRootDir, name);
-    return path;
-}
-
-FILE *portRootFopen(const char *name, const char *mode)
-{
-    return fopen(portRootPath(name), mode);
-}
-
-/* Data/Logs/<name>, made on first use: the run log (ge_direct.log) and
- * crash.log live there, beside the saves and profiles, not next to the exe. */
-const char *portLogPath(const char *name)
-{
-    static const char *const dirs[] = { "Data", "Data/Logs" };
-    static char path[1200];
-    int i;
-
-    for (i = 0; i < 2; i++) {
-#ifdef _WIN32
-        _mkdir(portRootPath(dirs[i]));   /* fails harmlessly when it exists */
-#else
-        mkdir(portRootPath(dirs[i]), 0755);
-#endif
-    }
-    snprintf(path, sizeof(path), "%sData/Logs/%s", sPortRootDir, name);
-    return path;
-}
-
-/* The settings file was called ge.ini before the Project Midas rename: when
- * there is no midas.ini yet, rename an existing ge.ini once so players keep
- * their settings. */
-static void portMigrateIni(void)
-{
-    char oldpath[1200];
-    FILE *f = portRootFopen("midas.ini", "r");
-
-    if (f != NULL) {
-        fclose(f);
-        return;
-    }
-    snprintf(oldpath, sizeof(oldpath), "%s", portRootPath("ge.ini"));
-    if (rename(oldpath, portRootPath("midas.ini")) == 0) {
-        portConLogf("ge: renamed ge.ini to midas.ini\n");
-    }
-}
-
 #ifdef _WIN32
 /* Direct-launch log: the exe is a GUI-subsystem program (no console window,
  * CMakeLists.txt), so a double-click, Steam or shell launch has nowhere to put
@@ -733,7 +631,7 @@ static void portDirectLaunchLog(void)
         setvbuf(stdout, NULL, _IONBF, 0);
     }
     portConLogf("ge: direct launch (no console): output -> %s\n", path);
-    portConLogf("ge: root: %s\n", sPortRootDir[0] != '\0' ? sPortRootDir : "(cwd)");
+    portPathsLogDirs();   /* the same line startup printed, now in the log file */
 }
 #endif
 
@@ -744,8 +642,7 @@ int main(int argc, char **argv)
         extern void portConInit(void);
         portConInit();
     }
-    portInitRootDir(argv[0]);
-    portMigrateIni();
+    portPathsInit(argv[0]);
 
 #ifdef GE_VIDEO
     /* GE_LISTPADS=1: GELauncher's controller probe - print SDL's device

@@ -19,6 +19,20 @@ env:
   BASEROM_US_SHA1: abe01e4aeb033b6c0836819f549c791b26cfde83
 
 jobs:
+  # ROM-free path probes cover both layouts and CMake's install rules,
+  # including on fork PRs that cannot access the ROM secret.
+  test-paths:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Test the file layouts with GCC and Clang
+        run: |
+          CC=gcc python3 scripts/port/test_xdg_paths.py
+          CC=clang python3 scripts/port/test_xdg_paths.py
+
   build-linux:
     runs-on: ubuntu-24.04
 
@@ -86,6 +100,18 @@ jobs:
         run: |
           cmake -B build_pc -DCMAKE_BUILD_TYPE=Debug -DGE_VIDEO=ON -DSDL2_LINUX_ROOT="$HOME/sdl2-linux-i686"
           cmake --build build_pc -j$(nproc)
+
+      # The package layout compiles the path code and the migration guards
+      # differently, and only it has the install rules: build it too.
+      - name: Configure and build the Linux package layout
+        run: |
+          cmake -B build_xdg -DCMAKE_BUILD_TYPE=Debug -DGE_VIDEO=ON -DGE_XDG_PATHS=ON \
+            -DSDL2_LINUX_ROOT="$HOME/sdl2-linux-i686"
+          cmake --build build_xdg -j$(nproc)
+          cmake --install build_xdg --prefix "$PWD/prefix_xdg"
+          test -x prefix_xdg/bin/ProjectMidas
+          test -f prefix_xdg/share/project-midas/Data/shaders_base.txt
+          test -f prefix_xdg/share/doc/project-midas/midas_ini_help.txt
 
       # upload-artifact drops file permissions, so the binary goes up inside a
       # tar that keeps its exec bit (G334). It still needs an i386 libSDL2 on

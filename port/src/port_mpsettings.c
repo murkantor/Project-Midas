@@ -29,18 +29,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
-#include <sys/stat.h>
-#ifdef _WIN32
-#include <direct.h>
-#endif
 #include <ultra64.h>
+#include "port_paths.h"   /* portDataPath: saved settings follow the layout */
 
 #define MPSET_DIR      "Data/MatchSettings"
 #define MPSET_EXT      ".gemp"
 #define MPSET_MAX      50      /* most saved settings listed (Load Settings' drop-down scrolls) */
 #define MPSET_NAME_MAX 24
 
-extern const char *portRootPath(const char *name);   /* main.c */
 extern void portConLogf(const char *fmt, ...);         /* port_console.c */
 
 static char sNames[MPSET_MAX][MPSET_NAME_MAX];
@@ -52,7 +48,7 @@ static const char *mpsetPath(const char *name)
     char rel[MPSET_NAME_MAX + 32];
 
     snprintf(rel, sizeof(rel), MPSET_DIR "/%s" MPSET_EXT, name);
-    return portRootPath(rel);
+    return portDataPath(rel);
 }
 
 static int mpsetNameCmp(const void *a, const void *b)
@@ -62,23 +58,7 @@ static int mpsetNameCmp(const void *a, const void *b)
 
 static void mpsetEnsureDir(void)
 {
-    static const char *const dirs[] = { "Data", MPSET_DIR };
-    s32 i;
-
-    for (i = 0; i < 2; i++)
-    {
-        const char *dir = portRootPath(dirs[i]);
-        struct stat st;
-
-        if (stat(dir, &st) != 0)
-        {
-#ifdef _WIN32
-            _mkdir(dir);
-#else
-            mkdir(dir, 0755);
-#endif
-        }
-    }
+    portEnsureDir(portDataPath(MPSET_DIR));
 }
 
 void portMpSetRescan(void)
@@ -88,7 +68,7 @@ void portMpSetRescan(void)
     struct dirent *de;
 
     sCount = 0;
-    d = opendir(portRootPath(MPSET_DIR));
+    d = opendir(portDataPath(MPSET_DIR));
     if (d == NULL)
     {
         return;

@@ -18,8 +18,10 @@
  *   1. argv[1] not starting with '-'   (drag-and-drop onto ge.exe)
  *   2. --rom-file <path> / --rom-file=<path>
  *   3. GE_ROM=<path>                    (env var, e.g. the launcher's env box)
- *   4. midas.ini [data] rom=<path>         (relative = next to the exe)
- *   5. <exe dir>/Data/*                 (alphabetical, first valid file)
+ *   4. midas.ini [data] rom=<path>         (relative = the data folder, port_paths.c)
+ *   5. the data folder's files          (alphabetical, first valid file; Data/
+ *                                        in the default layout, the folder
+ *                                        itself in a package install)
  *   6. <exe dir>/baserom.u.z64, <exe dir>/../baserom.u.z64  (dev tree)
  *
  * Formats: .z64 (80 37 12 40), .v64 byte-swapped (37 80 40 12) and .n64
@@ -55,9 +57,6 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <dirent.h>
-#ifdef _WIN32
-#include <direct.h> /* _mkdir */
-#endif
 #include <ultra64.h>
 #include "decompress.h" /* decompressdata: the game's own 1172 inflater */
 #include "ob.h"         /* fileentry / resource_lookup_data_entry: the compiled file table */
@@ -78,8 +77,7 @@ extern void portConLogf(const char *fmt, ...);
 #define port_errno (*__errno_location())
 #endif
 
-extern const char *portRootPath(const char *name); /* main.c: <exe dir>/name */
-extern FILE *portRootFopen(const char *name, const char *mode);
+#include "port_paths.h"                             /* portDataPath: Data/ follows the layout */
 extern void *portAllocHighDedicated(u32 size);      /* pcsched.c */
 extern void portRomdataSegsApply(void);             /* segments.c: point segment consumers at
                                                      * the ROM */
@@ -107,7 +105,7 @@ extern void portRomdataSegsApply(void);             /* segments.c: point segment
 
 static u8 *sRom;            /* normalised z64 bytes, high address */
 static u32 sRomSize;
-static char sRomPath[1200];
+static char sRomPath[PORT_PATH_MAX];
 static enum romsource sRomSource;
 static u8 *sCdata;          /* the inflated data segment: it IS the directory */
 static u32 sCdataSize;
@@ -143,7 +141,7 @@ static const char *romdataSourceName(enum romsource s)
     case ROMSRC_ARGFLAG: return "--rom-file";
     case ROMSRC_ENV:     return "GE_ROM";
     case ROMSRC_INI:     return "midas.ini [data] rom=";
-    case ROMSRC_DATADIR: return "./" ROMDATA_DATA_DIR " scan";
+    case ROMSRC_DATADIR: return "data folder scan";
     case ROMSRC_LEGACY:  return "legacy repo baserom (dev)";
     default:             return "none";
     }
@@ -162,13 +160,13 @@ static int romdataPathIsAbsolute(const char *p)
     return 0;
 }
 
-/* <exe dir>/rel unless rel is already absolute */
+/* <data folder>/rel unless rel is already absolute */
 static void romdataResolve(char *out, size_t n, const char *rel)
 {
     if (romdataPathIsAbsolute(rel)) {
         snprintf(out, n, "%s", rel);
     } else {
-        snprintf(out, n, "%s", portRootPath(rel));
+        snprintf(out, n, "%s", portDataPath(rel));
     }
 }
 
@@ -201,26 +199,11 @@ static int romdataIsFile(const char *path)
     return romdataStat(path, &st) && S_ISREG(st.st_mode);
 }
 
-/* create <exe dir>/name when missing (for Data, a fresh install then shows
- * the user where the ROM goes) */
+/* create <data folder>/name when missing (for Data, a fresh install then
+ * shows the user where the ROM goes) */
 static void romdataEnsureDir(const char *name)
 {
-    const char *path = portRootPath(name);
-    int rc;
-
-    if (romdataIsDir(path)) {
-        return;
-    }
-#ifdef _WIN32
-    rc = _mkdir(path);
-#else
-    rc = mkdir(path, 0755);
-#endif
-    if (rc == 0) {
-        portConLogf("ge: romdata: created %s\n", path);
-    } else {
-        portConLogf("ge: romdata: could not create %s (read-only install dir?)\n", path);
-    }
+    portEnsureDir(portDataPath(name));   /* logs the creation, or why it failed */
 }
 
 static int romdataCmpStr(const void *a, const void *b)
@@ -309,7 +292,7 @@ static char *romdataTrim(char *s)
  * builds, so [data] has its own (section-aware) reader here */
 static void romdataReadIni(void)
 {
-    FILE *f = portRootFopen("midas.ini", "r");
+    FILE *f = portCfgFopen("midas.ini", "r");
     char line[1200];
     int indata = 0;
 
@@ -1281,19 +1264,19 @@ s32 romdataInit(int argc, char **argv)
         romdataNoteRefusal(e);
     }
     if (sIniRom[0] != '\0') {
-        char p[1200];
+        char p[PORT_PATH_MAX];
         romdataResolve(p, sizeof(p), sIniRom);
         if (romdataTryLoad(p, ROMSRC_INI, 0)) goto done;
         romdataNoteRefusal(p);
     }
     {
         static char names[ROMDATA_LIST_MAX][256];
-        char datadir[1200];
+        char datadir[PORT_PATH_MAX];
         int n;
-        snprintf(datadir, sizeof(datadir), "%s", portRootPath(ROMDATA_DATA_DIR));
+        snprintf(datadir, sizeof(datadir), "%s", portDataPath(ROMDATA_DATA_DIR));
         n = romdataListDir(datadir, 0, names, ROMDATA_LIST_MAX);
         for (i = 0; i < n; i++) {
-            char p[1500];
+            char p[PORT_PATH_MAX + 256];
             snprintf(p, sizeof(p), "%s" PATHSEP "%s", datadir, names[i]);
             if (romdataTryLoad(p, ROMSRC_DATADIR, 1)) goto done;
             romdataNoteRefusal(p); /* an EMPTY folder, a packed ROM and the
@@ -1305,18 +1288,18 @@ s32 romdataInit(int argc, char **argv)
         }
     }
     {
-        char p[1200];
-        snprintf(p, sizeof(p), "%s", portRootPath("baserom.u.z64"));
+        char p[PORT_PATH_MAX];
+        snprintf(p, sizeof(p), "%s", portExePath("baserom.u.z64"));
         if (romdataIsFile(p) && romdataTryLoad(p, ROMSRC_LEGACY, 0)) goto done;
-        snprintf(p, sizeof(p), "%s", portRootPath(".." PATHSEP "baserom.u.z64"));
+        snprintf(p, sizeof(p), "%s", portExePath(".." PATHSEP "baserom.u.z64"));
         if (romdataIsFile(p) && romdataTryLoad(p, ROMSRC_LEGACY, 0)) goto done;
     }
 
     portConLogf("ge: romdata: NO ROM - tried argv[1], --rom-file, GE_ROM, midas.ini [data] rom=, %s, baserom.u.z64\n",
-            portRootPath(ROMDATA_DATA_DIR));
+            portDataPath(ROMDATA_DATA_DIR));
 #ifdef GE_ROMDATA_FALLBACK
     portConLogf("ge: romdata: put your GoldenEye 007 (U) cart image (.z64/.v64/.n64) in %s or drop it onto the exe; running on the compiled-in assets\n",
-            portRootPath(ROMDATA_DATA_DIR));
+            portDataPath(ROMDATA_DATA_DIR));
     return 0;
 #else
     {
@@ -1326,30 +1309,30 @@ s32 romdataInit(int argc, char **argv)
          * cart-sized files), and a packed ROM is named as such so a README or
          * .zip is never called "a modded ROM". */
         char msg[1700];
-        const char *dir = portRootPath(ROMDATA_DATA_DIR);
+        const char *dir = portDataPath(ROMDATA_DATA_DIR);
 
         if (sRefusedCarts > 0) {
             snprintf(msg, sizeof(msg),
-                     "No usable GoldenEye 007 ROM found in ./%s.\n\n"
+                     "No usable GoldenEye 007 ROM found in the game's data folder.\n\n"
                      "%d cart image(s) were found, but none of them is a stock GoldenEye 007 (U) cart: "
                      "a modded ROM, another region, or a bad dump.\n"
                      "Please provide your ROM into this folder and try again.\n\n"
                      "Looked in:\n%s",
-                     ROMDATA_DATA_DIR, sRefusedCarts, dir);
+                     sRefusedCarts, dir);
         } else if (sRefusedArchives > 0) {
             snprintf(msg, sizeof(msg),
-                     "No GoldenEye 007 ROM found in ./%s.\n\n"
+                     "No GoldenEye 007 ROM found in the game's data folder.\n\n"
                      "The ROM is still packed in an archive (.zip/.7z/...). "
                      "Extract the .z64, .v64 or .n64 file from it into this folder and try again.\n\n"
                      "Looked in:\n%s",
-                     ROMDATA_DATA_DIR, dir);
+                     dir);
         } else {
             snprintf(msg, sizeof(msg),
-                     "No GoldenEye 007 ROM found in ./%s.\n"
+                     "No GoldenEye 007 ROM found in the game's data folder.\n"
                      "Please provide your ROM into this folder and try again.\n\n"
                      "Looked in:\n%s\n\n"
                      "The ROM may be .z64, .v64 or .n64. You can also drag one onto the game.",
-                     ROMDATA_DATA_DIR, dir);
+                     dir);
         }
         portConLogf("ge: romdata: %s\n", msg);
         fflush(stderr);
